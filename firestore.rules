@@ -1,0 +1,71 @@
+rules_version = '2';
+
+// Agilos: profiles, unique names and per-player match stats.
+// A player can only read and write their own documents. Stats come from the player's own
+// game, so they can't be fully trusted; these rules reject malformed or impossible values.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function validName(n) { return n is string && n.matches('^[A-Za-z0-9_-]{3,16}$'); }
+    function validColour(c) { return c is string && c.matches('^#[0-9a-fA-F]{6}$'); }
+    function count(v, max) { return v is int && v >= 0 && v <= max; }
+    function amount(v, max) { return (v is int || v is float) && v >= 0 && v <= max; }
+
+    // Display names are unique: names/{lower-case name} -> { uid }
+    match /names/{name} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && validName(name);
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /players/{uid} {
+      allow read, delete: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['name', 'colour', 'createdAt', 'settings', 'totals'])
+        && validName(request.resource.data.name)
+        && validColour(request.resource.data.colour)
+        && getAfter(/databases/$(database)/documents/names/$(request.resource.data.name.lower())).data.uid == uid;
+      allow update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['name', 'colour', 'createdAt', 'settings', 'totals'])
+        && validName(request.resource.data.name)
+        && validColour(request.resource.data.colour)
+        && (request.resource.data.name == resource.data.name
+            || getAfter(/databases/$(database)/documents/names/$(request.resource.data.name.lower())).data.uid == uid)
+        && (!('settings' in request.resource.data) || request.resource.data.settings is map)
+        && (!('totals' in request.resource.data) || validTotals(request.resource.data.totals));
+
+      function validTotals(t) {
+        return t is map
+          && count(t.matches, 1000000) && count(t.wins, t.matches)
+          && count(t.kills, 20000000) && count(t.deaths, t.matches)
+          && amount(t.damageDealt, 2000000000) && amount(t.damageTaken, 2000000000);
+      }
+
+      // One record per finished match; never edited afterwards
+      match /matches/{matchId} {
+        allow read, delete: if isOwner(uid);
+        allow update: if false;
+        allow create: if isOwner(uid)
+          && request.resource.data.endedAt == request.time
+          && count(request.resource.data.total, 16) && request.resource.data.total >= 2
+          && count(request.resource.data.place, request.resource.data.total) && request.resource.data.place >= 1
+          && count(request.resource.data.kills, request.resource.data.total - 1)
+          && count(request.resource.data.deaths, 1)
+          && count(request.resource.data.headshots, request.resource.data.kills)
+          && count(request.resource.data.hits, request.resource.data.shots)
+          && count(request.resource.data.shots, 100000)
+          && count(request.resource.data.timeAlive, 3600)
+          && amount(request.resource.data.damageDealt, 100000)
+          && amount(request.resource.data.damageTaken, 100000)
+          && request.resource.data.win is bool
+          && (request.resource.data.win == false || request.resource.data.place == 1);
+      }
+    }
+  }
+}

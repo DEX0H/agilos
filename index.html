@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
       Content-Security-Policy (GitHub Pages can't send headers, so it lives here).
-      Only the game's own files may run or load. 'wasm-unsafe-eval' is required by the
+      Only the game's own files may run or load, plus Firebase (sign-in and stats:
+      *.googleapis.com, the Google sign-in helper from apis.google.com and its frame). 'wasm-unsafe-eval' is required by the
       meshopt model decoder (WebAssembly); blob: and data: cover textures decoded from models.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob:; worker-src 'self' blob:; media-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob: https://*.googleapis.com; frame-src https://agilos-c3f7b.firebaseapp.com; worker-src 'self' blob:; media-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/png" href="icon-192.png" />
     <title>Agilos</title>
@@ -173,6 +174,67 @@
         color: #fff; font: 700 18px var(--font-ui); text-shadow: 0 1px 3px #000; opacity: 0;
       }
 
+      /* ---------- Profiles: chip, sign-in card, stats ---------- */
+      .acct-chip {
+        position: fixed; left: 16px; top: 14px; z-index: 5; display: flex; align-items: center; gap: 8px;
+        font: 600 14px var(--font-ui); color: #fff;
+      }
+      .acct-dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 6px rgba(0,0,0,0.6); }
+      .acct-name { font: 600 20px/1 var(--font-display); letter-spacing: 0.05em; margin-right: 4px; }
+      .acct-chip-btn, .acct-btn {
+        font: 600 14px var(--font-ui); color: #fff; background: rgba(255,255,255,0.08); cursor: pointer;
+        border: 1px solid rgba(255,255,255,0.18); border-radius: 3px; padding: 5px 10px;
+      }
+      .acct-chip-btn:hover, .acct-btn:hover { background: rgba(255,255,255,0.16); }
+      .acct-chip-btn.accent, .acct-btn.primary { background: var(--accent); color: #10131a; border-color: var(--accent); }
+      .acct-modal {
+        position: fixed; inset: 0; z-index: 6; display: none; align-items: center; justify-content: center;
+        background: rgba(5,7,10,0.72); padding: 16px; box-sizing: border-box; cursor: default;
+      }
+      .acct-card {
+        width: min(380px, 100%); max-height: 100%; overflow: auto; scrollbar-width: none; box-sizing: border-box;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 22px;
+        display: flex; flex-direction: column; gap: 10px; color: #fff; font: 500 15px var(--font-ui);
+      }
+      .acct-card::-webkit-scrollbar { display: none; }
+      .acct-card.wide { width: min(760px, 100%); }
+      .acct-card.busy { opacity: 0.6; pointer-events: none; }
+      .acct-title { margin: 0; font: 600 34px/1 var(--font-display); letter-spacing: 0.04em; }
+      .acct-sub { margin: 0; color: var(--muted, rgba(255,255,255,0.65)); font-size: 14px; }
+      .acct-err { margin: 0; min-height: 1.2em; color: #ff8a5c; font-size: 14px; }
+      .acct-btn.google { padding: 10px; font-size: 16px; }
+      .acct-or { text-align: center; color: rgba(255,255,255,0.45); font-size: 13px; }
+      .acct-form { display: flex; flex-direction: column; gap: 8px; }
+      .acct-card input:not([type=checkbox]) {
+        font: 500 16px var(--font-ui); color: #fff; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.18);
+        border-radius: 3px; padding: 9px 10px; outline: none;
+      }
+      .acct-card input:focus { border-color: var(--accent); }
+      .acct-row { display: flex; gap: 8px; }
+      .acct-row .acct-btn { flex: 1; padding: 9px; }
+      .acct-link { background: none; border: none; color: rgba(255,255,255,0.7); cursor: pointer; font: 600 14px var(--font-ui); padding: 2px; text-align: left; }
+      .acct-link:hover { color: #fff; }
+      .acct-link.guest { margin-top: 6px; color: var(--accent-2); }
+      .acct-link.danger { color: #ff6a4d; }
+      .acct-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+      .acct-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+      .acct-swatch.on { border-color: #fff; }
+      .acct-head { display: flex; justify-content: space-between; align-items: center; }
+      .acct-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+      .acct-tile { background: rgba(255,255,255,0.05); border: 1px solid var(--line); border-radius: 4px; padding: 10px; display: flex; flex-direction: column; }
+      .acct-tile b { font: 600 30px/1 var(--font-display); }
+      .acct-tile span { color: rgba(255,255,255,0.6); font-size: 13px; }
+      .acct-h3 { margin: 8px 0 0; font: 600 20px var(--font-display); letter-spacing: 0.05em; }
+      .acct-bars { display: flex; flex-direction: column; gap: 6px; }
+      .acct-bar { display: grid; grid-template-columns: 110px 1fr 40px; align-items: center; gap: 8px; font-size: 14px; }
+      .acct-bar .track { height: 10px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+      .acct-bar i { display: block; height: 100%; background: var(--accent); }
+      .acct-bar b { text-align: right; }
+      .acct-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+      .acct-table th { text-align: left; color: rgba(255,255,255,0.55); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+      .acct-table td { padding: 5px 6px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+      .acct-table tr.win td { color: var(--accent-2); }
+      @media (max-width: 860px) { .acct-chip { position: static; margin-bottom: 8px; } }
       /* ---------- Menu (start / pause) ---------- */
       #overlay {
         position: fixed; inset: 0; display: flex; overflow: auto; box-sizing: border-box;

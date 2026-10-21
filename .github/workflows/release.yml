@@ -1,7 +1,9 @@
 name: Release (Windows)
 
-# Builds the Windows installer when a version tag (v1.2.3) is pushed and publishes it to
-# GitHub Releases, where the website's download button and the in-app updater find it.
+# Every change merged to main becomes a Windows release automatically (version
+# <major>.<minor>.<run number>), published to GitHub Releases, where the website's download
+# button and the installed apps' auto-updater find it. A pushed v* tag releases that exact
+# package.json version instead.
 #
 # Signing: when the repository variable SIGNPATH_ORGANIZATION_ID is set (and the secret
 # SIGNPATH_API_TOKEN exists), the app and the installer are signed through SignPath.io
@@ -11,7 +13,9 @@ name: Release (Windows)
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.github/dependabot.yml']
 
 permissions:
   contents: write   # create the release and upload the installer
@@ -36,11 +40,20 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - name: Tag must match package.json version
+      - name: Version
         shell: bash
         run: |
-          v="v$(node -p "require('./package.json').version")"
-          if [ "$v" != "$GITHUB_REF_NAME" ]; then echo "Tag $GITHUB_REF_NAME does not match $v"; exit 1; fi
+          base="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            if [ "v$base" != "$GITHUB_REF_NAME" ]; then echo "Tag $GITHUB_REF_NAME does not match v$base"; exit 1; fi
+            version="$base"
+          else
+            # main: same major.minor, patch = this workflow's run number (always increases)
+            version="$(echo "$base" | cut -d. -f1-2).${GITHUB_RUN_NUMBER}"
+            npm version "$version" --no-git-tag-version --allow-same-version
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TAG=v$version" >> "$GITHUB_ENV"
 
       - run: npm run build
 
@@ -54,7 +67,7 @@ jobs:
             signing="This build is not code-signed yet, so Windows SmartScreen may warn: choose **More info**, then **Run anyway**."
           fi
           {
-            echo "**Agilos ${GITHUB_REF_NAME}** for Windows 10 and 11 (64-bit). Download **Agilos-Setup.exe** below, run it, and play."
+            echo "**Agilos ${TAG}** for Windows 10 and 11 (64-bit). Download **Agilos-Setup.exe** below, run it, and play."
             echo "The game updates itself when a new version is released (you can turn this off in the menu)."
             echo "Prefer the browser? Play at https://dex0h.github.io/agilos/"
             echo
@@ -73,7 +86,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Agilos $GITHUB_REF_NAME" --notes-file release/notes.md
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "Agilos $TAG" --notes-file release/notes.md
 
       # ---- Signed: sign the app, build the installer around it, sign the installer ----
       - name: Package the app
@@ -128,7 +141,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          node scripts/latest-yml.mjs release/signed/Agilos-Setup.exe "$version" > release/signed/latest.yml
-          gh release create "$GITHUB_REF_NAME" release/signed/Agilos-Setup.exe release/signed/latest.yml \
-            --repo "$GITHUB_REPOSITORY" --title "Agilos $GITHUB_REF_NAME" --notes-file release/notes.md
+          node scripts/latest-yml.mjs release/signed/Agilos-Setup.exe "$VERSION" > release/signed/latest.yml
+          gh release create "$TAG" release/signed/Agilos-Setup.exe release/signed/latest.yml \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Agilos $TAG" --notes-file release/notes.md

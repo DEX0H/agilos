@@ -123,7 +123,11 @@ export class Character {
   takeDamage(amount, attacker = null, bypassShield = false) {
     if (this.dead) return false;
     if (this.shielded && !bypassShield) return false;
+    const dealt = Math.min(this.health, amount);
     this.health = Math.max(0, this.health - amount);
+    // Stats hooks (see stats.js)
+    if (this.onDamaged) this.onDamaged(dealt, attacker);
+    if (attacker && attacker.onDealt) attacker.onDealt(dealt, this);
     this.damageFlash = 0.35;
     this.hitStrength = Math.min(1, amount / 60); // a headshot (62.5) is a full-strength hit
     this.lastAttacker = attacker;
