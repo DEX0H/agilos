@@ -18,18 +18,26 @@ const STEP_HEIGHT = 0.55;      // auto step-up height
 const MOUSE_SENS = 0.0022;
 const MAX_PITCH = Math.PI / 2 - 0.05;
 const PHYSICS_STEP = 1 / 120;
+const MAX_HEALTH = 100;
+const RESPAWN_TIME = 2.5;
 
 export class Player {
-  constructor(camera, colliders) {
+  constructor(camera, colliders, spawn) {
     this.camera = camera;
     this.colliders = colliders;
+    this.spawn = spawn.clone();
 
-    this.position = new THREE.Vector3(0, 0, 0); // feet
+    this.position = spawn.clone(); // feet
     this.velocity = new THREE.Vector3();
     this.yaw = 0;
     this.pitch = 0;
     this.onGround = false;
     this.canDouble = true;
+
+    this.health = MAX_HEALTH;
+    this.dead = false;
+    this.respawnTimer = 0;
+    this.damageFlash = 0;
 
     this.keys = new Set();
     this.jumpQueued = false;
@@ -60,7 +68,44 @@ export class Player {
     window.addEventListener('blur', () => this.keys.clear());
   }
 
+  eye() {
+    return new THREE.Vector3(this.position.x, this.position.y + EYE, this.position.z);
+  }
+
+  takeDamage(amount) {
+    if (this.dead) return;
+    this.health = Math.max(0, this.health - amount);
+    this.damageFlash = 0.35;
+    if (this.health <= 0) {
+      this.dead = true;
+      this.respawnTimer = RESPAWN_TIME;
+    }
+  }
+
+  addRecoil(pitch, yaw) {
+    this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch + pitch));
+    this.yaw += yaw;
+  }
+
+  respawn() {
+    this.position.copy(this.spawn);
+    this.velocity.set(0, 0, 0);
+    this.health = MAX_HEALTH;
+    this.dead = false;
+    this.canDouble = true;
+  }
+
   update(dt) {
+    this.damageFlash = Math.max(0, this.damageFlash - dt);
+
+    if (this.dead) {
+      this.velocity.set(0, 0, 0);
+      this.respawnTimer -= dt;
+      if (this.respawnTimer <= 0) this.respawn();
+      this.updateCamera();
+      return;
+    }
+
     const forward = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0);
     const strafe = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
     const sprint = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');

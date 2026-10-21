@@ -12,6 +12,20 @@
         margin: -3px 0 0 -3px; border-radius: 50%;
         background: rgba(255,255,255,0.9); box-shadow: 0 0 2px #000; pointer-events: none;
       }
+      #hitmarker {
+        position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        color: #fff; font: 700 22px/1 system-ui, sans-serif; opacity: 0;
+        text-shadow: 0 0 3px #000; pointer-events: none;
+      }
+      #damage {
+        position: fixed; inset: 0; opacity: 0; pointer-events: none;
+        background: radial-gradient(ellipse at center, rgba(0,0,0,0) 50%, rgba(200,0,0,0.85) 100%);
+      }
+      #dead {
+        display: none; position: fixed; inset: 0; align-items: center; justify-content: center;
+        color: #ff5555; font: 700 44px system-ui, sans-serif; text-shadow: 0 2px 4px #000;
+        pointer-events: none;
+      }
       #hud {
         position: fixed; left: 12px; top: 12px; color: #fff; font: 13px/1.4 ui-monospace, monospace;
         text-shadow: 0 1px 2px #000; pointer-events: none; white-space: pre;
@@ -26,12 +40,16 @@
   </head>
   <body>
     <div id="crosshair"></div>
+    <div id="hitmarker">×</div>
+    <div id="damage"></div>
+    <div id="dead">YOU DIED</div>
     <div id="hud"></div>
     <div id="overlay">
       <div>
         <h1>Agilos — Movement Test</h1>
         <p>Click to play</p>
-        <p>WASD move · Mouse look · Space jump (press again in air to double jump) · Shift sprint · Esc release mouse</p>
+        <p>WASD move · Mouse look · Space jump (press again in air to double jump) · Shift sprint</p>
+        <p>Left click shoot · R reload · Esc release mouse</p>
       </div>
     </div>
     <script type="module" src="/src/main.js"></script>
