@@ -15,8 +15,14 @@ const DEATH_SHOW = 1.6; // seconds the death animation stays visible
 // Only the input comes from AI instead of a keyboard. Network players will slot in
 // the same way later.
 
-const NAMES = ['Viper', 'Rook', 'Ghost', 'Nova', 'Hex', 'Blitz', 'Kestrel', 'Mako'];
-const COLORS = [0x6a2420, 0x24486a, 0x2f5a2a, 0x5a4a1e, 0x4a2a5a, 0x1f5a55, 0x5a2a3f, 0x3a3f46];
+const NAMES = [
+  'Viper', 'Rook', 'Ghost', 'Nova', 'Hex', 'Blitz', 'Kestrel', 'Mako',
+  'Raven', 'Onyx', 'Jolt', 'Saber', 'Talon', 'Drift', 'Ember', 'Wraith',
+];
+const COLORS = [
+  0x6a2420, 0x24486a, 0x2f5a2a, 0x5a4a1e, 0x4a2a5a, 0x1f5a55, 0x5a2a3f, 0x3a3f46,
+  0x6a3a20, 0x203a6a, 0x4a5a1e, 0x5a1e4a, 0x1e5a3a, 0x46463a, 0x6a2a2a, 0x2a2a5a,
+];
 
 // Perception and aim
 const SIGHT_RANGE = 38;
@@ -870,13 +876,28 @@ export class Bot extends Character {
 
 export class Bots {
   constructor(scene, world, nav, spawnPoints, count = 4, boxes = null) {
+    Object.assign(this, { scene, world, nav, spawnPoints, boxes });
     this.list = [];
-    for (let i = 0; i < count; i++) {
-      const b = new Bot(scene, world, nav, spawnPoints[i % spawnPoints.length], i, spawnPoints);
-      b.boxes = boxes;
+    this.match = null;
+    this.setCount(count);
+  }
+
+  // Add or remove bots to reach `n`. New bots wait frozen until the next match starts.
+  setCount(n) {
+    while (this.list.length < n) {
+      const i = this.list.length;
+      const b = new Bot(this.scene, this.world, this.nav, this.spawnPoints[i % this.spawnPoints.length], i, this.spawnPoints);
+      b.boxes = this.boxes;
+      b.match = this.match;
+      if (this.match) b.frozen = true;
       this.list.push(b);
+      this.world.add(b);
     }
-    for (const b of this.list) world.add(b);
+    while (this.list.length > n) {
+      const b = this.list.pop();
+      this.world.remove(b);
+      b.group.removeFromParent();
+    }
   }
 
   update(dt) {

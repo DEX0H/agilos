@@ -7,7 +7,7 @@ Apex Legends' movement, Call of Duty's look and Counter-Strike's gunplay.
 
 ## The game
 
-- **Mode:** a battle royale for you and 4 bots. Everyone spawns at a random point,
+- **Mode:** a battle royale for you and 1 to 15 bots (4 by default, set in the menu). Everyone spawns at a random point,
   there are no respawns, and the last one standing wins. A safe zone shrinks in four
   phases and hurts anyone outside it.
 - **Spawn shield:** 10 seconds of protection after spawning. Firing drops it early.

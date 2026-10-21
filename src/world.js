@@ -22,6 +22,11 @@ export class World {
     this.combatants.push(c);
   }
 
+  remove(c) {
+    const i = this.combatants.indexOf(c);
+    if (i >= 0) this.combatants.splice(i, 1);
+  }
+
   raycastWorld(origin, dir, maxDist) {
     return raycastWorld(origin, dir, maxDist, this.colliders);
   }
