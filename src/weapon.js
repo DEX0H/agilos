@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GunState, HANDGUN } from './gun.js';
+import { settings, capture } from './settings.js';
 
 // The player's handgun: first-person viewmodel and effects on top of the shared GunState.
 const RECOIL_PITCH = 0.03;     // camera kick up, radians
@@ -59,7 +60,7 @@ export class Handgun {
     camera.add(this.model);
 
     document.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyR' && !e.repeat) this.gun.reload();
+      if (!capture.action && e.code === settings.binds.reload && !e.repeat) this.gun.reload();
     });
   }
 

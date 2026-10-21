@@ -182,6 +182,20 @@ export class Bot extends Character {
     this.tag.position.y = 2.15;
     this.group.add(this.tag);
 
+    // Spawn shield bubble
+    this.bubble = new THREE.Mesh(
+      new THREE.SphereGeometry(1.15, 24, 16),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0.6, 1.2, 2.4),
+        transparent: true,
+        opacity: 0.18,
+        depthWrite: false,
+      }),
+    );
+    this.bubble.position.y = 0.95;
+    this.bubble.scale.y = 1.05;
+    this.group.add(this.bubble);
+
     this.walkPhase = Math.random() * Math.PI * 2;
     scene.add(this.group);
   }
@@ -219,7 +233,7 @@ export class Bot extends Character {
     let best = null;
     let bestD = SIGHT_RANGE;
     for (const c of this.world.combatants) {
-      if (c === this || c.dead) continue;
+      if (c === this || c.dead || c.shielded) continue; // no point shooting a spawn shield
       const ce = c.eye();
       const d = eye.distanceTo(ce);
       if (d > bestD) continue;
@@ -329,7 +343,7 @@ export class Bot extends Character {
       this.perceptionTimer = PERCEPTION_INTERVAL;
       this.perceive();
     }
-    if (this.target && this.target.dead) {
+    if (this.target && (this.target.dead || this.target.shielded)) {
       this.target = null;
       this.targetVisible = false;
     }
@@ -565,6 +579,10 @@ export class Bot extends Character {
 
     this.flashTimer -= dt;
     this.flash.visible = this.flashTimer > 0;
+
+    // Shield bubble pulses, and blinks in the last two seconds
+    this.bubble.visible = this.shielded && (this.shieldTimer > 2 || Math.floor(this.shieldTimer * 6) % 2 === 0);
+    this.bubble.material.opacity = 0.14 + Math.sin(performance.now() / 180) * 0.04;
   }
 }
 

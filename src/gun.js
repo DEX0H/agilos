@@ -90,6 +90,7 @@ export class GunState {
     this.ammo--;
     this.cooldown = this.spec.fireInterval;
     res.fired = true;
+    this.owner.dropShield();
 
     const spread = this.spread();
     this.bloom = Math.min(this.spec.maxBloom, this.bloom + this.spec.shotBloom);

@@ -8,6 +8,8 @@ import { World } from './world.js';
 import { NavGraph } from './nav.js';
 import { Bots } from './bots.js';
 import { Match } from './match.js';
+import { settings, bindLabel, setSens, capture } from './settings.js';
+import { buildControlsPanel } from './controls-panel.js';
 import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
 import { createDust } from './dust.js';
@@ -74,6 +76,15 @@ const lockMsg = document.getElementById('lockmsg');
 const spreadRing = document.getElementById('spread');
 const feed = document.getElementById('feed');
 const banner = document.getElementById('banner');
+const shieldTint = document.getElementById('shieldtint');
+const toast = document.getElementById('toast');
+buildControlsPanel(document.getElementById('settings'), document.getElementById('controlstext'));
+
+let toastTimer = 0;
+function showToast(text) {
+  toast.textContent = text;
+  toastTimer = 1.5;
+}
 
 let fps = 60;
 let hitmarkerTimer = 0;
@@ -95,10 +106,16 @@ function setQuality(q) {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Digit1') setWeapon(weapon);
-  if (e.code === 'Digit2') setWeapon(knife);
-  if (e.code === 'KeyF' && !e.repeat) knife.flip();
-  if (e.code === 'KeyP' && !e.repeat) setQuality(quality === 'high' ? 'low' : 'high');
+  if (capture.action) return; // a key is being rebound
+  const b = settings.binds;
+  if (e.code === b.weapon1) setWeapon(weapon);
+  if (e.code === b.weapon2) setWeapon(knife);
+  if (e.code === b.flip && !e.repeat) knife.flip();
+  if (e.code === b.quality && !e.repeat) setQuality(quality === 'high' ? 'low' : 'high');
+  if (e.code === b.sensDown || e.code === b.sensUp) {
+    setSens(settings.sens + (e.code === b.sensUp ? 0.1 : -0.1));
+    showToast(`Sensitivity ${settings.sens.toFixed(2)}`);
+  }
   // Enter starts a new match once you are out or the match is over
   if (e.code === 'Enter' && !e.repeat && (match.state === 'over' || (match.state === 'live' && player.dead))) {
     match.start();
@@ -186,6 +203,10 @@ function frame(now) {
     spreadRing.style.display = 'none';
   }
 
+  toastTimer = Math.max(0, toastTimer - dt);
+  toast.style.opacity = String(Math.min(1, toastTimer * 2));
+  shieldTint.style.opacity = player.shielded && !player.dead ? '1' : '0';
+
   hitmarkerTimer = Math.max(0, hitmarkerTimer - dt);
   hitmarker.style.opacity = String(hitmarkerTimer / 0.15);
   damageVignette.style.opacity = String(player.damageFlash / 0.35);
@@ -200,14 +221,15 @@ function frame(now) {
 
   const v = player.velocity;
   const reloading = weapon.reloadTimer > 0;
+  const shield = player.shielded && !player.dead ? `   SHIELD ${Math.ceil(player.shieldTimer)}s (firing drops it)` : '';
   hud.textContent =
-    `HP      ${Math.ceil(player.health)}\n` +
-    `WEAPON  ${active === knife ? 'knife (F flip)' : `handgun  ${reloading ? 'RELOADING' : `${weapon.ammo}/${weapon.magSize}   reserve ${weapon.reserve}`}`}\n` +
+    `HP      ${Math.ceil(player.health)}${shield}\n` +
+    `WEAPON  ${active === knife ? `knife (${bindLabel('flip')} flip)` : `handgun  ${reloading ? 'RELOADING' : `${weapon.ammo}/${weapon.magSize}   reserve ${weapon.reserve}`}`}\n` +
     `KILLS   ${player.kills}   alive ${match.aliveCount()}/${match.total}\n` +
     (match.zoneText() ? `${match.zoneText()}\n` : '') +
     `speed   ${Math.hypot(v.x, v.z).toFixed(1)} m/s   height ${player.position.y.toFixed(1)} m\n` +
     `state   ${player.state}   double jump ${player.canDouble ? 'ready' : 'used'}\n` +
-    `fps     ${fps.toFixed(0)}   quality ${quality} (P)`;
+    `fps     ${fps.toFixed(0)}   quality ${quality} (${bindLabel('quality')})   sens ${settings.sens.toFixed(2)} (${bindLabel('sensDown')} ${bindLabel('sensUp')})`;
 
   postfx.composer.render(dt);
   requestAnimationFrame(frame);

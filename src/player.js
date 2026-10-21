@@ -1,8 +1,9 @@
 import { Character, NO_INPUT } from './character.js';
+import { settings, radPerCount, capture } from './settings.js';
 
 // The local player: a Character driven by keyboard and mouse, with the camera on its eyes.
+// Keys come from the bindings in settings (physical key positions, any keyboard layout).
 
-const MOUSE_SENS = 0.0022;
 const MAX_PITCH = Math.PI / 2 - 0.05;
 
 export class Player extends Character {
@@ -45,8 +46,9 @@ export class Player extends Character {
     // fires at the mouse's own polling rate instead of once per frame.
     const look = (e) => {
       if (!this.locked) return;
-      this.yaw -= e.movementX * MOUSE_SENS;
-      this.pitch -= e.movementY * MOUSE_SENS;
+      const s = radPerCount();
+      this.yaw -= e.movementX * s;
+      this.pitch -= e.movementY * s;
       this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
       this.syncAim();
     };
@@ -54,10 +56,12 @@ export class Player extends Character {
     else document.addEventListener('mousemove', look);
 
     document.addEventListener('keydown', (e) => {
-      if (e.code === 'Space') {
+      if (capture.action) return; // a key is being rebound
+      if (e.code === settings.binds.jump) {
         e.preventDefault();
         if (!e.repeat) this.jumpQueued = true;
       }
+      if (e.code === 'Space') e.preventDefault(); // never scroll the page
       this.keys.add(e.code);
     });
     document.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -89,11 +93,12 @@ export class Player extends Character {
     }
 
     const k = this.keys;
+    const b = settings.binds;
     const input = {
-      forward: (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0),
-      strafe: (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0),
-      sprint: k.has('ShiftLeft') || k.has('ShiftRight'),
-      crouch: k.has('KeyC'),
+      forward: (k.has(b.forward) ? 1 : 0) - (k.has(b.back) ? 1 : 0),
+      strafe: (k.has(b.right) ? 1 : 0) - (k.has(b.left) ? 1 : 0),
+      sprint: k.has(b.sprint),
+      crouch: k.has(b.crouch),
       jump: this.jumpQueued,
     };
     this.jumpQueued = false;

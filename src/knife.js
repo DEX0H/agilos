@@ -92,6 +92,7 @@ export class Knife {
     const result = { fired: false, hit: false, headshot: false, kill: false };
     if (this.cooldown > 0 || this.player.dead) return result;
     result.fired = true;
+    this.player.dropShield();
 
     this.cooldown = COOLDOWN;
     this.slashTimer = SLASH_TIME;

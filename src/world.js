@@ -42,7 +42,7 @@ export class World {
     let bestDist = maxDist;
     for (const c of this.combatants) {
       if (c === exclude || c.dead) continue;
-      if (!_ray.intersectBox(c.hitBox(), _pt)) continue;
+      if (!_ray.intersectBox(c.hitBox(), _pt)) continue; // shielded bodies still stop bullets
       const d = origin.distanceTo(_pt);
       if (d < bestDist) {
         bestDist = d;
@@ -78,7 +78,7 @@ export class World {
     // Safety net: anyone who leaves the map dies and respawns
     for (const c of this.combatants) {
       if (!c.dead && c.position.y < -20) {
-        c.takeDamage(Infinity, null);
+        c.takeDamage(Infinity, null, true);
         this.reportKill(null, c, 'fell');
       }
     }

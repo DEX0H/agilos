@@ -159,7 +159,7 @@ export class Match {
       this.timer -= dt;
       if (this.timer <= 0) {
         this.state = 'live';
-        for (const c of this.world.combatants) c.frozen = false;
+        for (const c of this.world.combatants) c.frozen = false; // shields start counting now
       }
     }
 

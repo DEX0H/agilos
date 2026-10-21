@@ -20,6 +20,7 @@ const AIR_ACCEL = 8;
 const STEP_HEIGHT = 0.55;       // auto step-up height
 const PHYSICS_STEP = 1 / 120;
 const MAX_HEALTH = 100;
+export const SPAWN_SHIELD = 10;  // seconds of invulnerability after spawning
 
 // Slide (sprint + crouch on the ground)
 const SLIDE_MIN_SPEED = 6.5;
@@ -82,6 +83,16 @@ export class Character {
 
     this.frozen = false;      // no movement input (match countdown)
     this.canRespawn = true;   // off during a battle royale match
+    this.shieldTimer = SPAWN_SHIELD;
+  }
+
+  get shielded() {
+    return this.shieldTimer > 0;
+  }
+
+  // Firing your own weapon ends spawn protection early
+  dropShield() {
+    this.shieldTimer = 0;
   }
 
   eye() {
@@ -102,9 +113,11 @@ export class Character {
     );
   }
 
-  // Returns true if this damage killed the character
-  takeDamage(amount, attacker = null) {
+  // Returns true if this damage killed the character.
+  // The spawn shield blocks everything except `bypassShield` (falling out of the map).
+  takeDamage(amount, attacker = null, bypassShield = false) {
     if (this.dead) return false;
+    if (this.shielded && !bypassShield) return false;
     this.health = Math.max(0, this.health - amount);
     this.damageFlash = 0.35;
     this.lastAttacker = attacker;
@@ -130,11 +143,14 @@ export class Character {
     this.lastWallBox = null;
     this.height = STAND_H;
     this.eyeOff = STAND_H - EYE_BELOW_TOP;
+    this.shieldTimer = SPAWN_SHIELD;
   }
 
   // Timers that run every frame, alive or dead
   preUpdate(dt) {
     this.damageFlash = Math.max(0, this.damageFlash - dt);
+    // The shield only counts down while you can actually move
+    if (!this.frozen && !this.dead) this.shieldTimer = Math.max(0, this.shieldTimer - dt);
   }
 
   // Counts down the respawn while dead. Returns true while still dead.
