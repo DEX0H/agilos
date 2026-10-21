@@ -42,12 +42,12 @@ const sky = createSky(scene);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 300);
 scene.add(camera); // the gun viewmodel is a child of the camera
 
-const { colliders } = buildArena(scene);
-const player = new Player(camera, colliders, new THREE.Vector3(0, 0, 14));
+const { colliders, playerSpawn, mobSpawns } = buildArena(scene);
+const player = new Player(camera, colliders, playerSpawn);
 const weapon = new Handgun(camera, scene, player);
 const knife = new Knife(camera, scene, player);
 let active = weapon;
-const enemies = new Enemies(scene, colliders);
+const enemies = new Enemies(scene, colliders, mobSpawns);
 
 // 1 = handgun, 2 = knife. F flips the knife.
 function setWeapon(w) {
@@ -87,6 +87,7 @@ let fps = 60;
 let hitmarkerTimer = 0;
 
 const lockMsg = document.getElementById('lockmsg');
+const spreadRing = document.getElementById('spread');
 
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === document.body;
@@ -136,6 +137,17 @@ function frame(now) {
   sky.position.copy(camera.position);
   dust.update(t);
   postfx.grade.uniforms.uTime.value = t;
+
+  // Spread ring shows the real cone: radius in pixels = tan(spread) / tan(fov/2) * half screen height
+  if (active === weapon && player.locked && !player.dead) {
+    const half = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const px = Math.tan(weapon.currentSpread()) / half * (window.innerHeight / 2);
+    const d = Math.max(0, px * 2);
+    spreadRing.style.display = d > 4 ? 'block' : 'none';
+    spreadRing.style.width = spreadRing.style.height = `${d}px`;
+  } else {
+    spreadRing.style.display = 'none';
+  }
 
   hitmarkerTimer = Math.max(0, hitmarkerTimer - dt);
   hitmarker.style.opacity = String(hitmarkerTimer / 0.15);

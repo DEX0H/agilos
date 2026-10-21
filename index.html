@@ -12,6 +12,11 @@
         margin: -3px 0 0 -3px; border-radius: 50%;
         background: rgba(255,255,255,0.9); box-shadow: 0 0 2px #000; pointer-events: none;
       }
+      #spread {
+        position: fixed; left: 50%; top: 50%; width: 0; height: 0;
+        transform: translate(-50%, -50%); border-radius: 50%;
+        border: 1.5px solid rgba(255,255,255,0.55); pointer-events: none; display: none;
+      }
       #hitmarker {
         position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
         color: #fff; font: 700 22px/1 system-ui, sans-serif; opacity: 0;
@@ -40,6 +45,7 @@
   </head>
   <body>
     <div id="crosshair"></div>
+    <div id="spread"></div>
     <div id="hitmarker">×</div>
     <div id="damage"></div>
     <div id="dead">YOU DIED</div>

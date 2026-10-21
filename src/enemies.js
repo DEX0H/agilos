@@ -14,7 +14,9 @@ const ATTACK_RANGE = 1.8;
 const ATTACK_DAMAGE = 7;
 const ATTACK_COOLDOWN = 1.2;
 const RESPAWN_DELAY = 6;
-const ARENA_LIMIT = 28;        // keep mobs inside the walls
+const ARENA_LIMIT = 29;        // keep mobs inside the walls
+const MOB_STEP = 0.55;         // mobs climb stairs like the player
+const MOB_GRAVITY = 30;
 
 // Ground spawn points, chosen clear of crates and stairs
 export const MOB_SPAWNS = [
@@ -41,6 +43,7 @@ export class Mob {
     this.respawnTimer = 0;
     this.hitFlash = 0;
     this.moveSpeed = 0;
+    this.vy = 0;
     this.walkPhase = Math.random() * Math.PI * 2;
     this.wanderTimer = Math.random() * 2;
     this.wanderDir = new THREE.Vector2(0, 0);
@@ -129,6 +132,7 @@ export class Mob {
     this.hp = MOB_MAX_HP;
     this.alive = true;
     this.alert = 0;
+    this.vy = 0;
     this.group.visible = true;
     this.syncGroup();
   }
@@ -150,9 +154,51 @@ export class Mob {
     if (d === 0) return true;
     const np = this.position.clone();
     np[axis] += d;
+    if (!this.blocked(np)) {
+      this.position[axis] = np[axis];
+      return true;
+    }
+    // Step up onto a low ledge or stair if everything in the way is short enough
+    let stepTop = -Infinity;
+    for (const b of this.colliders) {
+      if (b.min.x < np.x + MOB_HALF_W && b.max.x > np.x - MOB_HALF_W &&
+          b.min.z < np.z + MOB_HALF_W && b.max.z > np.z - MOB_HALF_W &&
+          b.min.y < np.y + MOB_HEIGHT && b.max.y > np.y + 0.05) {
+        const rise = b.max.y - np.y;
+        if (rise > MOB_STEP) return false;
+        stepTop = Math.max(stepTop, b.max.y);
+      }
+    }
+    np.y = stepTop;
     if (this.blocked(np)) return false;
-    this.position[axis] = np[axis];
+    this.position.copy(np);
+    this.vy = 0;
     return true;
+  }
+
+  // Highest surface under the mob's feet
+  supportTop() {
+    const p = this.position;
+    let best = -Infinity;
+    for (const b of this.colliders) {
+      if (b.min.x < p.x + MOB_HALF_W && b.max.x > p.x - MOB_HALF_W &&
+          b.min.z < p.z + MOB_HALF_W && b.max.z > p.z - MOB_HALF_W &&
+          b.max.y <= p.y + 0.05 && b.max.y > best) {
+        best = b.max.y;
+      }
+    }
+    return best;
+  }
+
+  applyGravity(dt) {
+    this.vy -= MOB_GRAVITY * dt;
+    const floor = this.supportTop();
+    let ny = this.position.y + this.vy * dt;
+    if (ny <= floor) {
+      ny = floor;
+      this.vy = 0;
+    }
+    this.position.y = ny;
   }
 
   // Procedural walk and attack animation
@@ -238,6 +284,7 @@ export class Mob {
       }
     }
 
+    this.applyGravity(dt);
     this.animate(dt);
     this.syncGroup();
   }

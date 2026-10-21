@@ -3,16 +3,25 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { getTexture } from './textures.js';
 import { SUN_DIR } from './sky.js';
 
-// Test arena: 60 x 60 m, stepped structures for vertical movement.
+// Vertical city block: 60 x 60 m, nine open-sided buildings of 1 to 4 stories,
+// external stairs, bridges between floors and rooftops, jumpable gaps between roofs.
 // Every solid is an axis-aligned box that is both rendered and used for collision.
-// Collision layout is unchanged from the earlier iterations.
 
-const TILE = 4;                              // metres per texture tile
+const TILE = 4;                 // metres per texture tile
+const STORY = 3.0;              // floor-to-floor height
+const SLAB = 0.35;              // floor slab thickness
+const STEP_RISE = 0.5;          // below the 0.55 m auto step-up
+const STEP_RUN = 0.8;
+const STAIR_W = 1.6;
+const STAIR_INSET = 0.8;        // stairs start this far from their corner
+const PILLAR = 0.6;
+const WALL_T = 0.3;
+const MAX_HEIGHT = 12;
 const LOW = new THREE.Color(0x6b6f76);
 const HIGH = new THREE.Color(0xb49a72);
-const MAX_HEIGHT = 7;
 const TRIM_COLOR = new THREE.Color(2.2, 0.9, 0.3); // HDR so it blooms slightly
-const MIN_TRIM_HEIGHT = 2;
+const TRIM_W = 0.08;
+const SIDE_ORDER = ['N', 'E', 'S', 'W'];
 
 const matCache = new Map();
 function material(kind, color) {
@@ -30,6 +39,7 @@ function material(kind, color) {
   }
   return matCache.get(key);
 }
+const trimMat = new THREE.MeshBasicMaterial({ color: TRIM_COLOR });
 
 export function buildArena(scene) {
   const colliders = [];
@@ -51,15 +61,14 @@ export function buildArena(scene) {
   scene.add(hemi);
 
   // Solid box centred on (x, z), from bottomY up to top.
-  // `trim` adds a thin glowing edge on top of high blocks so you can read the height.
+  // `trim` puts thin glowing strips along the top edges so ledges are easy to read.
   function block(x, z, w, d, top, { bottomY = 0, color, kind = 'concrete', trim = false } = {}) {
     const h = top - bottomY;
     const c = color ?? LOW.clone().lerp(HIGH, Math.min(top / MAX_HEIGHT, 1));
+
     // Rounded edges catch light; the collider stays the exact box
     const radius = Math.min(0.15, w / 3, h / 3, d / 3);
     const geom = new RoundedBoxGeometry(w, h, d, 3, radius);
-
-    // Scale UVs so the texture tile is TILE metres on every face
     const uv = geom.attributes.uv;
     const s = Math.max(w, h, d) / TILE;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * s, uv.getY(i) * s);
@@ -70,13 +79,19 @@ export function buildArena(scene) {
     mesh.receiveShadow = true;
     group.add(mesh);
 
-    if (trim && top >= MIN_TRIM_HEIGHT) {
-      const slab = new THREE.Mesh(
-        new RoundedBoxGeometry(w - 0.02, 0.04, d - 0.02, 2, 0.015),
-        new THREE.MeshBasicMaterial({ color: TRIM_COLOR }),
-      );
-      slab.position.set(x, top + 0.02, z);
-      group.add(slab);
+    if (trim) {
+      const y = top + 0.012;
+      const strips = [
+        [x, z - d / 2 + TRIM_W / 2, w, TRIM_W],
+        [x, z + d / 2 - TRIM_W / 2, w, TRIM_W],
+        [x - w / 2 + TRIM_W / 2, z, TRIM_W, d],
+        [x + w / 2 - TRIM_W / 2, z, TRIM_W, d],
+      ];
+      for (const [sx, sz, sw, sd] of strips) {
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(sw, 0.025, sd), trimMat);
+        strip.position.set(sx, y, sz);
+        group.add(strip);
+      }
     }
 
     colliders.push(new THREE.Box3(
@@ -85,92 +100,128 @@ export function buildArena(scene) {
     ));
   }
 
-  // Staircase of solid steps. Each step rises `rise` and is `run` deep.
-  function stairs(x0, z0, dx, dz, count, rise, run, width) {
-    for (let i = 0; i < count; i++) {
-      const along = i * run + run / 2;
-      const cx = x0 + dx * along;
-      const cz = z0 + dz * along;
-      const sx = dx !== 0 ? run : width;
-      const sz = dz !== 0 ? run : width;
-      block(cx, cz, sx, sz, rise * (i + 1), { trim: true });
+  // One flight of floating steps outside side `side` of footprint b, from baseY up one story.
+  // N runs +x from the west corner, E runs +z from the north corner,
+  // S runs -x from the east corner, W runs -z from the south corner.
+  const stairColor = new THREE.Color(0x6b7078);
+  function stairs(b, side, baseY) {
+    const steps = Math.round(STORY / STEP_RISE);
+    for (let k = 0; k < steps; k++) {
+      const top = baseY + STEP_RISE * (k + 1);
+      const along = STAIR_INSET + STEP_RUN * k + STEP_RUN / 2;
+      let cx, cz, sx, sz;
+      if (side === 'N') { cx = b.x0 + along; cz = b.z0 - STAIR_W / 2; sx = STEP_RUN; sz = STAIR_W; }
+      if (side === 'E') { cx = b.x1 + STAIR_W / 2; cz = b.z0 + along; sx = STAIR_W; sz = STEP_RUN; }
+      if (side === 'S') { cx = b.x1 - along; cz = b.z1 + STAIR_W / 2; sx = STEP_RUN; sz = STAIR_W; }
+      if (side === 'W') { cx = b.x0 - STAIR_W / 2; cz = b.z1 - along; sx = STAIR_W; sz = STEP_RUN; }
+      block(cx, cz, sx, sz, top, { bottomY: top - 0.3, kind: 'metal', color: stairColor });
     }
+  }
+
+  // Full-height wall on the half of a side away from where that side's stairs start
+  const wallColor = new THREE.Color(0x8a8478);
+  function wallChunk(b, side, baseY, topY) {
+    const cx = (b.x0 + b.x1) / 2;
+    const cz = (b.z0 + b.z1) / 2;
+    const opts = { bottomY: baseY, color: wallColor };
+    if (side === 'N') block((cx + b.x1) / 2, b.z0 + WALL_T / 2, b.x1 - cx, WALL_T, topY, opts);
+    if (side === 'E') block(b.x1 - WALL_T / 2, (cz + b.z1) / 2, WALL_T, b.z1 - cz, topY, opts);
+    if (side === 'S') block((b.x0 + cx) / 2, b.z1 - WALL_T / 2, cx - b.x0, WALL_T, topY, opts);
+    if (side === 'W') block(b.x0 + WALL_T / 2, (b.z0 + cz) / 2, WALL_T, cz - b.z0, topY, opts);
+  }
+
+  // Open-sided building: corner pillars, a floor slab per story, one wall chunk per story,
+  // external stairs per story, and a cover crate on the roof.
+  const pillarColor = new THREE.Color(0x5c6068);
+  const crateColor = new THREE.Color(0xb08a5e);
+  function building(cx, cz, w, d, stories, stairSides, wallSides) {
+    const b = { x0: cx - w / 2, x1: cx + w / 2, z0: cz - d / 2, z1: cz + d / 2 };
+    const roof = stories * STORY;
+
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        block(cx + sx * (w / 2 - PILLAR / 2), cz + sz * (d / 2 - PILLAR / 2), PILLAR, PILLAR, roof,
+          { color: pillarColor });
+      }
+    }
+
+    for (let i = 1; i <= stories; i++) {
+      block(cx, cz, w, d, i * STORY, { bottomY: i * STORY - SLAB, trim: true });
+    }
+
+    for (let i = 0; i < stories; i++) {
+      let side = wallSides ? wallSides[i] : SIDE_ORDER[i % 4];
+      // Never wall off the edge where the stairs from below arrive
+      if (!wallSides && i > 0 && stairSides[i - 1] === side) side = SIDE_ORDER[(i + 1) % 4];
+      wallChunk(b, side, i * STORY, (i + 1) * STORY - SLAB);
+    }
+
+    for (let i = 0; i < stories; i++) stairs(b, stairSides[i], i * STORY);
+
+    block(cx + w * 0.15, cz - d * 0.15, 2, 1, roof + 1.0, { bottomY: roof, kind: 'wood', color: crateColor });
+    return b;
   }
 
   // Ground (top at y = 0)
   block(0, 0, 60, 60, 0, { bottomY: -1, color: new THREE.Color(0x6a6258), kind: 'ground' });
 
-  // Perimeter walls
-  const wallTop = 10;
-  const wallColor = new THREE.Color(0x7d8590);
-  block(0, -30, 60, 1, wallTop, { kind: 'metal', color: wallColor });
-  block(0, 30, 60, 1, wallTop, { kind: 'metal', color: wallColor });
-  block(-30, 0, 1, 60, wallTop, { kind: 'metal', color: wallColor });
-  block(30, 0, 1, 60, wallTop, { kind: 'metal', color: wallColor });
+  // Perimeter walls, tall enough that the tower roof can't see over them
+  const wallTop = 16;
+  const perimeter = new THREE.Color(0x7d8590);
+  block(0, -30, 60, 1, wallTop, { kind: 'metal', color: perimeter });
+  block(0, 30, 60, 1, wallTop, { kind: 'metal', color: perimeter });
+  block(-30, 0, 1, 60, wallTop, { kind: 'metal', color: perimeter });
+  block(30, 0, 1, 60, wallTop, { kind: 'metal', color: perimeter });
 
-  // Central ziggurat: 4 tiers
-  block(0, 0, 8, 8, 0.5);
-  block(0, 0, 6, 6, 1.2);
-  block(0, 0, 4, 4, 2.4, { trim: true });
-  block(0, 0, 2, 2, 3.6, { trim: true });
+  // ---- Buildings ----
+  // Centre tower, 4 stories (roof 12 m). Wall sides chosen to keep bridges and stairs clear.
+  building(0, 0, 12, 12, 4, ['S', 'E', 'N', 'W'], ['W', 'E', 'W', 'S']);
+  // Corners
+  building(-17.5, -17.5, 12, 12, 3, ['W', 'N', 'E']);   // NW, roof 9 m
+  building(17.5, -17.5, 12, 12, 2, ['N', 'E']);        // NE, roof 6 m
+  building(-17.5, 17.5, 12, 12, 2, ['S', 'W']);        // SW, roof 6 m
+  building(17.5, 17.5, 12, 12, 3, ['E', 'S', 'W']);    // SE, roof 9 m
+  // Edges, 3 m streets to the tower
+  building(-16, 0, 14, 12, 1, ['W']);                  // W, roof 3 m
+  building(16, 0, 14, 12, 2, ['E', 'S']);              // E, roof 6 m
+  building(0, -16, 8, 14, 1, ['N']);                   // N, roof 3 m
+  building(0, 16, 8, 14, 2, ['S', 'W']);               // S, roof 6 m
 
-  // North-west platform and its stairs
-  stairs(-22, -20, 1, 0, 8, 0.5, 1.2, 4);
-  block(-10, -20, 6, 6, 4.0, { trim: true });
+  // ---- Bridges from tower floors to neighbouring roofs ----
+  const bridgeColor = new THREE.Color(0x7a6a55);
+  block(-7.5, 0, 3, 2, 3, { bottomY: 3 - SLAB, kind: 'metal', color: bridgeColor, trim: true }); // W roof <-> tower 1F
+  block(0, -7.5, 2, 3, 3, { bottomY: 3 - SLAB, kind: 'metal', color: bridgeColor, trim: true }); // N roof <-> tower 1F
+  block(7.5, 0, 3, 2, 6, { bottomY: 6 - SLAB, kind: 'metal', color: bridgeColor, trim: true });  // E roof <-> tower 2F
+  block(0, 7.5, 2, 3, 6, { bottomY: 6 - SLAB, kind: 'metal', color: bridgeColor, trim: true });  // S roof <-> tower 2F
 
-  // South-east platform and its stairs
-  stairs(22, 20, -1, 0, 6, 0.5, 1.2, 4);
-  block(12, 20, 6, 6, 3.0, { trim: true });
+  // Hop platform between the SW and S roofs (both 6 m), 2.75 m jumps each side
+  block(-7.75, 17, 2, 2, 6, { bottomY: 6 - SLAB, kind: 'metal', color: bridgeColor, trim: true });
 
-  // North-east sniper deck and its long staircase
-  stairs(10, -22, 0, 1, 12, 0.5, 1.2, 5);
-  block(10, -10, 7, 7, 6.0, { trim: true });
+  // King-of-the-hill lookout on the tower roof: one jump up from the 12 m roof
+  block(-2.5, 2.5, 3, 3, 13.5, { bottomY: 12, trim: true });
 
-  // Tower in the north-west
-  block(-3, -20, 3, 3, 6.5, { trim: true });
+  // Hop crates next to the 3 m and 6 m buildings: crate, then jump to the first floor
+  for (const [x, z] of [[-16, -7.2], [16, 7.2], [-5.2, -16], [5.2, 16]]) {
+    block(x, z, 1.4, 1.4, 1.6, { kind: 'wood', color: crateColor });
+  }
+  // Street cover
+  for (const [x, z] of [[-26, 10], [26, -10], [10, 26], [-10, -26]]) {
+    block(x, z, 1.4, 1.4, 1.0, { kind: 'wood', color: crateColor });
+  }
 
-  // ---- Movement course, north-east corner ----
-  // Wall-jump chimney: two tall walls 1.4 m apart. Bounce between them to climb.
-  const chimney = new THREE.Color(0x8a8f99);
-  block(18.0, -23, 0.4, 6, 5.5, { kind: 'metal', color: chimney, trim: true });
-  block(19.8, -23, 0.4, 6, 5.5, { kind: 'metal', color: chimney, trim: true });
-  // Ledge to mantle from, and a landing platform next to the chimney
-  block(16, -22, 2, 4, 1.2);
-  block(23, -22, 4, 4, 2.2, { trim: true });
-  // Slide gate: a beam at 1.25-1.9 m. Too low to walk under, slide or crouch through.
-  const beamColor = new THREE.Color(0x9a6b3a);
-  block(16.5, -14, 0.5, 0.5, 1.25, { kind: 'metal' });
-  block(27.5, -14, 0.5, 0.5, 1.25, { kind: 'metal' });
-  block(22, -14, 11, 0.6, 1.9, { bottomY: 1.25, kind: 'metal', color: beamColor });
-  // Rising floating platforms: jump, double jump, wall jump off the deck
-  block(21, -10, 2.5, 2.5, 2.6, { trim: true });
-  block(18, -8, 2, 2, 3.2, { trim: true });
-  block(24, -8, 3, 3, 4.0, { trim: true });
-
-  // ---- Movement course, south-west corner ----
-  // Second chimney
-  block(-22.0, 15, 0.4, 6, 5.0, { kind: 'metal', color: chimney, trim: true });
-  block(-20.2, 15, 0.4, 6, 5.0, { kind: 'metal', color: chimney, trim: true });
-  // Pillar ladder: 1 m, 2 m, 3 m, each a sprint-jump apart
-  block(-16, 22, 1.2, 1.2, 1.0);
-  block(-18.8, 24, 1.2, 1.2, 2.0, { trim: true });
-  block(-21.6, 22, 1.2, 1.2, 3.0, { trim: true });
-  // Mantle ledge and floating hops
-  block(-25, 24, 3, 2, 1.3);
-  block(-13, 14, 2, 2, 2.4, { trim: true });
-  block(-12, 19, 2, 2, 3.4, { trim: true });
-
-  // Wall-jump pillars in the open middle-south
-  block(4, 10, 0.8, 0.8, 4.5, { kind: 'metal', color: chimney, trim: true });
-  block(-3, 9, 0.8, 0.8, 4.5, { kind: 'metal', color: chimney, trim: true });
-
-  // Low cover crates
-  const crateColor = new THREE.Color(0xb08a5e);
-  const crates = [
-    [6, -6], [-8, 6],
-    [22, -4], [-4, -18], [8, 18], [-24, -4],
+  const playerSpawn = new THREE.Vector3(0, 0, 26);
+  const mobSpawns = [
+    // Streets
+    new THREE.Vector3(-26, 0, 0),
+    new THREE.Vector3(26, 0, 0),
+    new THREE.Vector3(0, 0, -26),
+    new THREE.Vector3(26, 0, 26),
+    new THREE.Vector3(-26, 0, -26),
+    // Upper floors
+    new THREE.Vector3(2, 3, 2),          // tower 1F
+    new THREE.Vector3(-17.5, 6, -14),    // NW 2F
+    new THREE.Vector3(17.5, 6, 17.5),    // SE 2F
   ];
-  for (const [x, z] of crates) block(x, z, 1.4, 1.4, 1.0, { kind: 'wood', color: crateColor });
 
-  return { colliders, group };
+  return { colliders, group, playerSpawn, mobSpawns };
 }
