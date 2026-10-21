@@ -135,7 +135,26 @@ ships, the server must be authoritative:** it should validate movement, hits, da
 the match state, and clients should only send inputs. The design is in
 [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
 
-## Things that were checked and found fine
+### 9. Firebase web key committed to the repository (fixed)
+
+On 2026-10-21 the Firebase web API key was committed in `src/firebase-config.js` and
+merged for about 20 minutes. Firebase web keys are meant to ship to every player's browser,
+so this is low risk, but the owner wants no keys in the code. Fixed by:
+
+- **Key out of the code:** the key and app ID now come from the repository secrets
+  `FIREBASE_API_KEY` and `FIREBASE_APP_ID` at build time (a git-ignored `.env.local` for
+  local development).
+- **Rotated:** a new key was created that only allows Identity Toolkit, Token Service and
+  Cloud Firestore, and the old key was deleted.
+- **History rewritten:** `main` was replaced with a history that never contained the key;
+  the branches and the two releases built from those commits were deleted. GitHub keeps
+  pull request #24 permanently; it shows a key that no longer works.
+
+The built game still contains the new key, as every Firebase web app does: anyone can
+see it in the page. What protects the data is `firestore.rules` (players read and write
+only their own documents) and the key's API restrictions.
+
+
 
 - **Requests:** every request the live site makes goes to its own origin. There are no
   third-party scripts, trackers, analytics or CDNs.

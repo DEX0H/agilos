@@ -16,6 +16,7 @@ on:
     branches: [main]
     tags: ['v*']
     paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.github/dependabot.yml']
+  workflow_dispatch: # rebuild the latest release by hand (Actions > Release (Windows) > Run workflow)
 
 permissions:
   contents: write   # create the release and upload the installer
