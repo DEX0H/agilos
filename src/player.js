@@ -48,7 +48,12 @@ export class Player {
     this.camera.rotation.order = 'YXZ';
 
     document.addEventListener('click', () => {
-      if (!this.locked) document.body.requestPointerLock();
+      if (this.locked) return;
+      const req = document.body.requestPointerLock();
+      // Some browsers return a promise that rejects when the lock is refused
+      if (req && typeof req.catch === 'function') {
+        req.catch(() => document.dispatchEvent(new Event('agilos:lockfailed')));
+      }
     });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === document.body;

@@ -63,11 +63,21 @@ const deadMsg = document.getElementById('dead');
 let kills = 0;
 let hitmarkerTimer = 0;
 
+const lockMsg = document.getElementById('lockmsg');
+
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === document.body;
   overlay.style.display = locked ? 'none' : 'flex';
   crosshair.style.display = locked ? 'block' : 'none';
+  if (locked) lockMsg.style.display = 'none';
 });
+
+// The browser refused mouse lock (raised by pointerlockerror or by the player's click handler)
+function showLockFailed() {
+  lockMsg.style.display = 'block';
+}
+document.addEventListener('pointerlockerror', showLockFailed);
+document.addEventListener('agilos:lockfailed', showLockFailed);
 
 // Left click fires while the mouse is locked
 document.addEventListener('mousedown', (e) => {
