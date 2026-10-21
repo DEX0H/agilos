@@ -45,7 +45,7 @@ export class Mob {
     this.group = new THREE.Group();
     this.bodyMat = new THREE.MeshStandardMaterial({ color: 0x9b2c2c, roughness: 0.7 });
     this.headMat = new THREE.MeshStandardMaterial({ color: 0x7a2222, roughness: 0.6 });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffd23f });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3, 0.8) }); // HDR eyes glow
 
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.1, 0.45), this.bodyMat);
     body.position.y = 0.85;

@@ -49,7 +49,7 @@ export class Handgun {
 
     this.flash = new THREE.Mesh(
       new THREE.SphereGeometry(0.05, 8, 6),
-      new THREE.MeshBasicMaterial({ color: 0xffd27a }),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 4, 1.5) }), // HDR, blooms
     );
     this.flash.visible = false;
     this.muzzle.add(this.flash);
@@ -119,7 +119,7 @@ export class Handgun {
 
   addTracer(a, b) {
     const geom = new THREE.BufferGeometry().setFromPoints([a.clone(), b.clone()]);
-    const mat = new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9 });
+    const mat = new THREE.LineBasicMaterial({ color: new THREE.Color(4, 3, 1.6), transparent: true, opacity: 0.9 });
     const line = new THREE.Line(geom, mat);
     this.scene.add(line);
     this.tracers.push({ line, life: 0.06 });

@@ -1,27 +1,42 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildArena } from './arena.js';
 import { Player } from './player.js';
 import { Handgun } from './weapon.js';
 import { Enemies } from './enemies.js';
+import { createSky } from './sky.js';
+import { createPostFx } from './postfx.js';
+import { createDust } from './dust.js';
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x9fc6e8);
-scene.fog = new THREE.Fog(0x9fc6e8, 60, 150);
+const HORIZON = 0xe7a878;
+scene.fog = new THREE.Fog(HORIZON, 55, 170);
+
+// Room reflections for PBR materials (RoomEnvironment ships with three.js, MIT)
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
+
+const sky = createSky(scene);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 300);
-scene.add(camera); // needed so the gun viewmodel (child of camera) renders
+scene.add(camera); // the gun viewmodel is a child of the camera
 
 const { colliders } = buildArena(scene);
 const player = new Player(camera, colliders, new THREE.Vector3(0, 0, 14));
 const weapon = new Handgun(camera, scene, player);
 const enemies = new Enemies(scene, colliders);
+const dust = createDust(scene);
+const postfx = createPostFx(renderer, scene, camera);
 
 const hud = document.getElementById('hud');
 const overlay = document.getElementById('overlay');
@@ -51,6 +66,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  postfx.resize(window.innerWidth, window.innerHeight);
 });
 
 // Debug handle for automated testing
@@ -59,11 +75,16 @@ window.agilos = { player, weapon, enemies, get kills() { return kills; } };
 let last = performance.now();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
+  const t = now / 1000;
   last = now;
 
   player.update(dt);
   weapon.update(dt);
   enemies.update(dt, player);
+
+  sky.position.copy(camera.position);
+  dust.update(t);
+  postfx.grade.uniforms.uTime.value = t;
 
   hitmarkerTimer = Math.max(0, hitmarkerTimer - dt);
   hitmarker.style.opacity = String(hitmarkerTimer / 0.15);
@@ -82,7 +103,7 @@ function frame(now) {
     `pos     ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}\n` +
     `ground  ${player.onGround ? 'yes' : 'no'}   double jump ${player.canDouble ? 'ready' : 'used'}`;
 
-  renderer.render(scene, camera);
+  postfx.composer.render(dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
