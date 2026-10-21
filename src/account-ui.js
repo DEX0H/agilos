@@ -1,13 +1,13 @@
 import {
-  profile, onProfileChange, signInWithGoogle, signInWithEmail, createAccount, resetPassword,
-  chooseName, playAsGuest, showSignIn, signOut, deleteAccount, errorText, NAME_RE, COLOURS,
+  profile, onProfileChange, signIn, createAccount, setColour, changePassword,
+  playAsGuest, showSignIn, signOut, deleteAccount, errorText, COLOURS,
 } from './profile.js';
 import { firebaseEnabled } from './firebase.js';
 import { loadStats } from './stats.js';
 
-// Menu UI for profiles: the sign-in card, the name picker, the profile chip and the
-// stats screen. Everything is built with DOM calls and textContent (no HTML strings),
-// so names and emails can never become markup.
+// Menu UI for profiles: the sign-in card (username + password), the profile card, the
+// profile chip and the stats screen. Everything is built with DOM calls and textContent
+// (no HTML strings), so names can never become markup.
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -15,7 +15,17 @@ const el = (tag, cls, text) => {
   if (text !== undefined) e.textContent = text;
   return e;
 };
-const stop = (e) => e.stopPropagation(); // clicks here must not start the game
+const stop = (e) => e.stopPropagation(); // clicks and typing here must not reach the game
+
+function field(type, placeholder, autocomplete) {
+  const i = el('input');
+  i.type = type;
+  i.placeholder = placeholder;
+  i.autocomplete = autocomplete;
+  i.spellcheck = false;
+  i.addEventListener('keydown', stop);
+  return i;
+}
 
 export function buildAccountUI(overlay, onNameChange) {
   const chip = el('div', 'acct-chip');
@@ -26,8 +36,7 @@ export function buildAccountUI(overlay, onNameChange) {
   }
   overlay.append(chip, modal);
 
-  let view = null; // 'signin' | 'name' | 'stats' | null
-  let editing = false; // the name card was opened from the chip (not the first sign-in)
+  let view = null; // 'signin' | 'profile' | 'stats' | null
 
   function close() {
     view = null;
@@ -41,124 +50,101 @@ export function buildAccountUI(overlay, onNameChange) {
     modal.append(card);
     modal.style.display = 'flex';
   }
-  modal.addEventListener('click', (e) => { if (e.target === modal && view === 'stats') close(); });
+  modal.addEventListener('click', (e) => { if (e.target === modal && view !== 'signin') close(); });
 
-  // ---- Sign-in card ----
+  const runner = (card, err) => async (fn) => {
+    err.textContent = '';
+    err.classList.remove('ok');
+    card.classList.add('busy');
+    try { await fn(); } catch (e) { err.textContent = errorText(e); } finally { card.classList.remove('busy'); }
+  };
+
+  // ---- Sign-in card: username + password ----
   function signInCard() {
     view = 'signin';
     open((card) => {
       card.append(el('h2', 'acct-title', 'Sign in'));
-      card.append(el('p', 'acct-sub', 'Keep your stats and settings on every device.'));
+      card.append(el('p', 'acct-sub', 'Your stats and settings follow your username.'));
       const err = el('p', 'acct-err');
-      const busy = (b) => card.classList.toggle('busy', b);
-      const run = async (fn) => {
-        err.textContent = '';
-        busy(true);
-        try { await fn(); } catch (e) { err.textContent = errorText(e); } finally { busy(false); }
-      };
-
-      const google = el('button', 'acct-btn google', 'Continue with Google');
-      google.type = 'button';
-      google.addEventListener('click', () => run(signInWithGoogle));
-      card.append(google, el('div', 'acct-or', 'or with email'));
-
+      const run = runner(card, err);
       const form = el('form', 'acct-form');
-      const email = el('input');
-      email.type = 'email';
-      email.placeholder = 'Email';
-      email.autocomplete = 'email';
-      const pass = el('input');
-      pass.type = 'password';
-      pass.placeholder = 'Password (6+ characters)';
-      pass.autocomplete = 'current-password';
+      const name = field('text', 'Username', 'username');
+      name.maxLength = 16;
+      const pass = field('password', 'Password (6+ characters)', 'current-password');
       const row = el('div', 'acct-row');
-      const signIn = el('button', 'acct-btn primary', 'Sign in');
-      signIn.type = 'submit';
+      const go = el('button', 'acct-btn primary', 'Sign in');
+      go.type = 'submit';
       const create = el('button', 'acct-btn', 'Create account');
       create.type = 'button';
-      row.append(signIn, create);
-      form.append(email, pass, row);
+      row.append(go, create);
+      form.append(name, pass, row);
       form.addEventListener('submit', (e) => {
         e.preventDefault();
-        run(() => signInWithEmail(email.value, pass.value));
+        run(() => signIn(name.value.trim(), pass.value));
       });
-      create.addEventListener('click', () => run(() => createAccount(email.value, pass.value)));
-      const forgot = el('button', 'acct-link', 'Forgot password?');
-      forgot.type = 'button';
-      forgot.addEventListener('click', () => run(async () => {
-        await resetPassword(email.value);
-        err.textContent = 'Password reset email sent.';
-      }));
-      for (const i of [email, pass]) i.addEventListener('keydown', stop); // typing isn't game input
-
+      create.addEventListener('click', () => run(() => createAccount(name.value.trim(), pass.value)));
+      const note = el('p', 'acct-sub small', 'No email needed. Keep your password safe: it can\'t be recovered.');
       const guest = el('button', 'acct-link guest', 'Play as guest (stats stay on this device)');
       guest.type = 'button';
       guest.addEventListener('click', () => { playAsGuest(); close(); });
-      card.append(form, err, forgot, guest);
+      card.append(form, err, note, guest);
+      setTimeout(() => name.focus(), 0);
     });
   }
 
-  // ---- Choose a name (first sign-in, or rename) ----
-  function nameCard(cancellable) {
-    view = 'name';
-    editing = cancellable;
+  // ---- Profile card: colour, password, delete ----
+  function profileCard() {
+    view = 'profile';
     open((card) => {
-      card.append(el('h2', 'acct-title', cancellable ? 'Edit profile' : 'Choose your player name'));
-      card.append(el('p', 'acct-sub', '3 to 16 letters, digits, _ or -. Shown in the kill feed.'));
-      const input = el('input');
-      input.maxLength = 16;
-      input.placeholder = 'Player name';
-      input.value = profile.name || '';
-      input.addEventListener('keydown', stop);
-      let colour = profile.colour || COLOURS[0];
+      card.append(el('h2', 'acct-title', profile.name));
+      const err = el('p', 'acct-err');
+      const run = runner(card, err);
+
+      card.append(el('h3', 'acct-h3', 'Colour'));
       const swatches = el('div', 'acct-swatches');
       for (const c of COLOURS) {
         const s = el('button', 'acct-swatch');
         s.type = 'button';
         s.style.background = c;
         s.title = 'Colour';
-        if (c === colour) s.classList.add('on');
-        s.addEventListener('click', () => {
-          colour = c;
+        if (c === profile.colour) s.classList.add('on');
+        s.addEventListener('click', () => run(async () => {
+          await setColour(c);
           for (const x of swatches.children) x.classList.toggle('on', x === s);
-        });
+        }));
         swatches.append(s);
       }
-      const err = el('p', 'acct-err');
-      const save = el('button', 'acct-btn primary', 'Save');
+      card.append(swatches);
+
+      card.append(el('h3', 'acct-h3', 'Change password'));
+      const cur = field('password', 'Current password', 'current-password');
+      const next = field('password', 'New password (6+ characters)', 'new-password');
+      const save = el('button', 'acct-btn', 'Change password');
       save.type = 'button';
-      save.addEventListener('click', async () => {
-        err.textContent = '';
-        if (!NAME_RE.test(input.value)) { err.textContent = errorText({ code: 'name-invalid' }); return; }
-        card.classList.add('busy');
-        try {
-          await chooseName(input.value, colour);
-          close();
-        } catch (e) {
-          err.textContent = errorText(e);
-        } finally {
-          card.classList.remove('busy');
+      save.addEventListener('click', () => run(async () => {
+        await changePassword(cur.value, next.value);
+        cur.value = '';
+        next.value = '';
+        err.textContent = 'Password changed.';
+        err.classList.add('ok');
+      }));
+      card.append(cur, next, save, err);
+
+      const del = el('button', 'acct-link danger', 'Delete account and stats');
+      del.type = 'button';
+      let armed = false;
+      del.addEventListener('click', () => {
+        if (!armed) {
+          armed = true;
+          del.textContent = 'Enter your current password above, then click again to delete everything';
+          return;
         }
+        run(async () => { await deleteAccount(cur.value); close(); });
       });
-      card.append(input, swatches, err, save);
-      if (cancellable) {
-        const del = el('button', 'acct-link danger', 'Delete account and stats');
-        del.type = 'button';
-        let armed = false;
-        del.addEventListener('click', async () => {
-          if (!armed) { armed = true; del.textContent = 'Click again to delete everything permanently'; return; }
-          card.classList.add('busy');
-          try { await deleteAccount(); close(); } catch (e) {
-            err.textContent = e && e.code === 'auth/requires-recent-login'
-              ? 'For safety, sign out and in again, then delete.' : errorText(e);
-          } finally { card.classList.remove('busy'); }
-        });
-        const back = el('button', 'acct-link', 'Cancel');
-        back.type = 'button';
-        back.addEventListener('click', close);
-        card.append(back, del);
-      }
-      setTimeout(() => input.focus(), 0);
+      const back = el('button', 'acct-link', 'Close');
+      back.type = 'button';
+      back.addEventListener('click', close);
+      card.append(back, del);
     });
   }
 
@@ -237,35 +223,24 @@ export function buildAccountUI(overlay, onNameChange) {
   // ---- Profile chip (top left of the menu) ----
   function renderChip() {
     chip.textContent = '';
-    if (!firebaseEnabled && profile.mode === 'guest') {
-      const b = el('button', 'acct-chip-btn', 'Stats');
-      b.type = 'button';
-      b.addEventListener('click', statsCard);
-      chip.append(b);
-      return;
-    }
     if (profile.mode === 'loading') return;
-    const dot = el('span', 'acct-dot');
-    dot.style.background = profile.mode === 'user' ? profile.colour : '#777';
-    const name = el('span', 'acct-name', profile.mode === 'user' ? profile.name : 'Guest');
-    chip.append(dot, name);
-    const stats = el('button', 'acct-chip-btn', 'Stats');
-    stats.type = 'button';
-    stats.addEventListener('click', statsCard);
-    chip.append(stats);
+    const button = (text, fn, cls = '') => {
+      const b = el('button', `acct-chip-btn ${cls}`, text);
+      b.type = 'button';
+      b.addEventListener('click', fn);
+      chip.append(b);
+    };
+    if (firebaseEnabled) {
+      const dot = el('span', 'acct-dot');
+      dot.style.background = profile.mode === 'user' ? profile.colour : '#777';
+      chip.append(dot, el('span', 'acct-name', profile.mode === 'user' ? profile.name : 'Guest'));
+    }
+    button('Stats', statsCard);
     if (profile.mode === 'user') {
-      const edit = el('button', 'acct-chip-btn', 'Profile');
-      edit.type = 'button';
-      edit.addEventListener('click', () => nameCard(true));
-      const out = el('button', 'acct-chip-btn', 'Sign out');
-      out.type = 'button';
-      out.addEventListener('click', () => signOut().catch(() => {}));
-      chip.append(edit, out);
-    } else {
-      const sign = el('button', 'acct-chip-btn accent', 'Sign in');
-      sign.type = 'button';
-      sign.addEventListener('click', () => { showSignIn(); signInCard(); });
-      chip.append(sign);
+      button('Profile', profileCard);
+      button('Sign out', () => signOut().catch(() => {}));
+    } else if (firebaseEnabled) {
+      button('Sign in', () => { showSignIn(); signInCard(); }, 'accent');
     }
   }
 
@@ -273,8 +248,7 @@ export function buildAccountUI(overlay, onNameChange) {
     renderChip();
     if (onNameChange) onNameChange(p.mode === 'user' ? p.name : null);
     if (p.mode === 'signedOut' && view !== 'signin') signInCard();
-    else if (p.mode === 'needsName' && view !== 'name') nameCard(false);
-    else if ((p.mode === 'user' || p.mode === 'guest') && (view === 'signin' || (view === 'name' && !editing))) close();
+    else if ((p.mode === 'user' || p.mode === 'guest') && view === 'signin') close();
   });
 
   return { openStats: statsCard, isOpen: () => view !== null };

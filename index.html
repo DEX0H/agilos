@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
       Content-Security-Policy (GitHub Pages can't send headers, so it lives here).
-      Only the game's own files may run or load, plus Firebase (sign-in and stats:
-      *.googleapis.com, the Google sign-in helper from apis.google.com and its frame). 'wasm-unsafe-eval' is required by the
+      Only the game's own files may run or load, plus Firebase (sign-in and stats,
+      *.googleapis.com). 'wasm-unsafe-eval' is required by the
       meshopt model decoder (WebAssembly); blob: and data: cover textures decoded from models.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob: https://*.googleapis.com; frame-src https://agilos-c3f7b.firebaseapp.com; worker-src 'self' blob:; media-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob: https://*.googleapis.com; worker-src 'self' blob:; media-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/png" href="icon-192.png" />
     <title>Agilos</title>
@@ -202,6 +202,8 @@
       .acct-title { margin: 0; font: 600 34px/1 var(--font-display); letter-spacing: 0.04em; }
       .acct-sub { margin: 0; color: var(--muted, rgba(255,255,255,0.65)); font-size: 14px; }
       .acct-err { margin: 0; min-height: 1.2em; color: #ff8a5c; font-size: 14px; }
+      .acct-err.ok { color: #5fd35a; }
+      .acct-sub.small { font-size: 12.5px; }
       .acct-btn.google { padding: 10px; font-size: 16px; }
       .acct-or { text-align: center; color: rgba(255,255,255,0.45); font-size: 13px; }
       .acct-form { display: flex; flex-direction: column; gap: 8px; }

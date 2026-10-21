@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Agilos: profiles, unique names and per-player match stats.
+// Agilos: profiles (username + password) and per-player match stats.
 // A player can only read and write their own documents. Stats come from the player's own
 // game, so they can't be fully trusted; these rules reject malformed or impossible values.
 service cloud.firestore {
@@ -12,17 +12,9 @@ service cloud.firestore {
     function validColour(c) { return c is string && c.matches('^#[0-9a-fA-F]{6}$'); }
     function count(v, max) { return v is int && v >= 0 && v <= max; }
     function amount(v, max) { return (v is int || v is float) && v >= 0 && v <= max; }
-
-    // Display names are unique: names/{lower-case name} -> { uid }
-    match /names/{name} {
-      allow read: if true;
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['uid'])
-        && request.resource.data.uid == request.auth.uid
-        && validName(name);
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
-      allow update: if false;
-    }
+    // The username is the login (<username>@agilos.players), so it is unique and can only
+    // be claimed by the account that signed up with it
+    function ownName(n) { return validName(n) && request.auth.token.email == n.lower() + '@agilos.players'; }
 
     match /players/{uid} {
       allow read, delete: if isOwner(uid);
@@ -30,13 +22,12 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'colour', 'createdAt', 'settings', 'totals'])
         && validName(request.resource.data.name)
         && validColour(request.resource.data.colour)
-        && getAfter(/databases/$(database)/documents/names/$(request.resource.data.name.lower())).data.uid == uid;
+        && ownName(request.resource.data.name);
       allow update: if isOwner(uid)
         && request.resource.data.keys().hasOnly(['name', 'colour', 'createdAt', 'settings', 'totals'])
         && validName(request.resource.data.name)
         && validColour(request.resource.data.colour)
-        && (request.resource.data.name == resource.data.name
-            || getAfter(/databases/$(database)/documents/names/$(request.resource.data.name.lower())).data.uid == uid)
+        && request.resource.data.name == resource.data.name
         && (!('settings' in request.resource.data) || request.resource.data.settings is map)
         && (!('totals' in request.resource.data) || validTotals(request.resource.data.totals));
 

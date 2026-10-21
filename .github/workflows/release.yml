@@ -76,17 +76,25 @@ jobs:
           } > release/notes.md
 
       # ---- Unsigned: build and publish in one go ----
-      - name: Build and publish installer (unsigned)
+      - name: Build installer (unsigned)
         if: env.SIGNED != 'true'
-        run: npx electron-builder --win --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Add the release notes
+        run: npx electron-builder --win --publish never
+      - name: Publish the release (unsigned)
         if: env.SIGNED != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "Agilos $TAG" --notes-file release/notes.md
+        run: |
+          # latest.yml is what installed copies read to find and verify the update
+          files="release/Agilos-Setup.exe release/Agilos-Setup.exe.blockmap release/latest.yml"
+          for f in $files; do test -f "$f" || { echo "missing $f"; ls release; exit 1; }; done
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" $files --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "Agilos $TAG" --notes-file release/notes.md
+          else
+            gh release create "$TAG" $files --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "Agilos $TAG" --notes-file release/notes.md --latest
+          fi
 
       # ---- Signed: sign the app, build the installer around it, sign the installer ----
       - name: Package the app
