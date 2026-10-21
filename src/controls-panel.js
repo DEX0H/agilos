@@ -1,5 +1,5 @@
 import {
-  ACTIONS, settings, bindLabel, bind, capture, resetDefaults, setLayout, setSens,
+  ACTIONS, settings, bindLabel, bind, capture, resetDefaults, setLayout, setSens, setBots, MIN_BOTS, MAX_BOTS,
   detectedLayout, onSettingsChange,
 } from './settings.js';
 
@@ -56,7 +56,25 @@ export function buildControlsPanel(container, hints) {
   sensRow.append(sensWrap);
   slider.addEventListener('input', () => { setSens(parseFloat(slider.value)); refresh(); });
   sensVal.addEventListener('change', () => { setSens(parseFloat(sensVal.value) || 1); refresh(); });
-  general.append(layoutRow, sensRow);
+  // Number of bots in the match
+  const botsRow = el('label', 'field');
+  botsRow.append(el('span', 'field-name', 'Bots'));
+  const botsWrap = el('div', 'sens');
+  const botsSlider = el('input');
+  botsSlider.type = 'range';
+  botsSlider.min = String(MIN_BOTS);
+  botsSlider.max = String(MAX_BOTS);
+  botsSlider.step = '1';
+  const botsVal = el('input', 'sens-num');
+  botsVal.type = 'number';
+  botsVal.min = String(MIN_BOTS);
+  botsVal.max = String(MAX_BOTS);
+  botsVal.step = '1';
+  botsWrap.append(botsSlider, botsVal);
+  botsRow.append(botsWrap);
+  botsSlider.addEventListener('input', () => { setBots(parseInt(botsSlider.value, 10)); refresh(); });
+  botsVal.addEventListener('change', () => { setBots(parseInt(botsVal.value, 10)); refresh(); });
+  general.append(layoutRow, sensRow, botsRow);
   container.append(general);
 
   // Key bindings
@@ -106,6 +124,8 @@ export function buildControlsPanel(container, hints) {
       sel.append(o);
     }
     sel.value = settings.layout;
+    botsSlider.value = String(settings.bots);
+    botsVal.value = String(settings.bots);
     slider.value = String(settings.sens);
     sensVal.value = settings.sens.toFixed(2);
     for (const [action] of ACTIONS) {

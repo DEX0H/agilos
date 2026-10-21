@@ -32,7 +32,10 @@ const RESERVED = new Set(['Escape', 'Enter']); // Esc releases the mouse, Enter 
 
 const defaults = () => Object.fromEntries(ACTIONS.map(([a, , code]) => [a, code]));
 
-export const settings = { binds: defaults(), sens: DEFAULT_SENS, layout: 'auto' };
+export const MIN_BOTS = 1;
+export const MAX_BOTS = 15;
+export const DEFAULT_BOTS = 4;
+export const settings = { binds: defaults(), sens: DEFAULT_SENS, layout: 'auto', bots: DEFAULT_BOTS };
 
 // Saved settings are untrusted input (anyone can edit their own localStorage), so only
 // known actions with plausible key codes, a known layout and a finite sensitivity are accepted.
@@ -53,6 +56,7 @@ try {
       settings.sens = Math.min(10, Math.max(0.1, saved.sens));
     }
     if (typeof saved.layout === 'string' && LAYOUTS.has(saved.layout)) settings.layout = saved.layout;
+    if (Number.isInteger(saved.bots)) settings.bots = Math.min(MAX_BOTS, Math.max(MIN_BOTS, saved.bots));
   }
 } catch {
   // storage unavailable or corrupt: keep defaults
@@ -68,6 +72,17 @@ export function save() {
 
 export function radPerCount() {
   return CS_YAW * settings.sens;
+}
+
+// Bots in the next match
+export function setBots(n) {
+  settings.bots = Math.min(MAX_BOTS, Math.max(MIN_BOTS, Math.round(n) || DEFAULT_BOTS));
+  save();
+  for (const fn of botListeners) fn(settings.bots);
+}
+const botListeners = [];
+export function onBotsChange(fn) {
+  botListeners.push(fn);
 }
 
 export function setSens(v) {
@@ -192,6 +207,7 @@ export function resetDefaults() {
   settings.binds = defaults();
   settings.sens = DEFAULT_SENS;
   settings.layout = 'auto';
+  setBots(DEFAULT_BOTS);
   changed();
 }
 

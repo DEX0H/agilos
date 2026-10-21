@@ -53,6 +53,7 @@ export class Match {
     this.wall.visible = false;
     scene.add(this.wall);
 
+    bots.match = this;
     for (const b of bots.list) b.match = this;
     for (const b of bots.list) b.frozen = true; // bots wait until the match starts
 
@@ -67,9 +68,20 @@ export class Match {
   }
 
   start() {
-    // Everyone gets a different random spawn
-    const spawns = [...this.spawnPoints].sort(() => Math.random() - 0.5);
     const everyone = [this.player, ...this.bots.list];
+    this.total = everyone.length;
+    // Everyone gets a different random spawn. With more players than fixed spawn points,
+    // extra ones come from the bots' navigation points, kept apart from each other.
+    const spawns = [...this.spawnPoints].sort(() => Math.random() - 0.5);
+    if (this.extraSpawns && spawns.length < everyone.length) {
+      const pool = [...this.extraSpawns].sort(() => Math.random() - 0.5);
+      for (const minGap of [8, 5, 2]) {
+        for (const p of pool) {
+          if (spawns.length >= everyone.length) break;
+          if (spawns.every((s) => s.distanceTo(p) >= minGap)) spawns.push(p);
+        }
+      }
+    }
     everyone.forEach((c, i) => {
       c.spawn.copy(spawns[i % spawns.length]);
       c.canRespawn = false;

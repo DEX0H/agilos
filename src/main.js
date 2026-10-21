@@ -16,7 +16,7 @@ import { World } from './world.js';
 import { NavGraph } from './nav.js';
 import { Bots } from './bots.js';
 import { Match } from './match.js';
-import { settings, bindLabel, setSens, capture } from './settings.js';
+import { settings, bindLabel, setSens, capture, onBotsChange } from './settings.js';
 import { buildControlsPanel } from './controls-panel.js';
 import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
@@ -62,10 +62,12 @@ const player = new Player(camera, colliders, playerSpawn);
 world.add(player);
 const nav = new NavGraph(colliders, navPoints, navLinks, navJumps);
 const boxes = new MysteryBoxes(scene, world, navPoints);
-const BOT_COUNT = 4;
-const bots = new Bots(scene, world, nav, mobSpawns, BOT_COUNT, boxes);
+const bots = new Bots(scene, world, nav, mobSpawns, settings.bots, boxes);
 const spawnPoints = [playerSpawn, ...mobSpawns];
 const match = new Match(scene, world, player, bots, spawnPoints);
+match.extraSpawns = navPoints;
+// The bot count from settings applies right away before the first match, otherwise at the next one
+onBotsChange((n) => { if (match.state === 'warmup') bots.setCount(n); });
 
 const weapon = new Firearm(camera, scene, player);
 const knife = new Knife(camera, scene, player);
@@ -75,6 +77,7 @@ let active = weapon;
 
 // A new match also moves the mystery boxes to new random spots
 function startMatch() {
+  bots.setCount(settings.bots);
   boxes.place();
   match.start();
 }
