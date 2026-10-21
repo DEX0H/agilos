@@ -46,7 +46,7 @@ export function buildArena(scene) {
   scene.add(sun);
 
   // Cool sky fill from above, warm bounce from the ground
-  const hemi = new THREE.HemisphereLight(0xbcd0ff, 0x3a3228, 0.6);
+  const hemi = new THREE.HemisphereLight(0xbcd0ff, 0x3a3228, 1.0);
   scene.add(hemi);
 
   // Solid box centred on (x, z), from bottomY up to top.

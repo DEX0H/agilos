@@ -14,7 +14,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.6;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -24,7 +24,7 @@ scene.fog = new THREE.Fog(HORIZON, 55, 170);
 // Room reflections for PBR materials (RoomEnvironment ships with three.js, MIT)
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.35;
+scene.environmentIntensity = 0.6;
 
 const sky = createSky(scene);
 
@@ -70,7 +70,7 @@ window.addEventListener('resize', () => {
 });
 
 // Debug handle for automated testing
-window.agilos = { player, weapon, enemies, get kills() { return kills; } };
+window.agilos = { player, weapon, enemies, renderer, scene, postfx, get kills() { return kills; } };
 
 let last = performance.now();
 function frame(now) {
