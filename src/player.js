@@ -12,6 +12,7 @@ export class Player extends Character {
     this.camera = camera;
     this.recoilPitch = 0;
     this.recoilYaw = 0;
+    this.sensScale = 1;   // the scope lowers it so aim feels the same zoomed in
 
     this.keys = new Set();
     this.jumpQueued = false;
@@ -46,7 +47,7 @@ export class Player extends Character {
     // fires at the mouse's own polling rate instead of once per frame.
     const look = (e) => {
       if (!this.locked) return;
-      const s = radPerCount();
+      const s = radPerCount() * this.sensScale;
       this.yaw -= e.movementX * s;
       this.pitch -= e.movementY * s;
       this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));

@@ -4,6 +4,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Character, STAND_H, NO_INPUT } from './character.js';
 import { GunState, HANDGUN } from './gun.js';
 import { loadCharacter, loadAnimations, loadPistol, normalizeGun } from './models.js';
+import { buildGunModel } from './gunmodels.js';
 
 // Animations that play once and hold their last frame
 const ONE_SHOT_ANIMS = ['Jump_Start', 'Jump_Land', 'Death01', 'Pistol_Shoot', 'Pistol_Reload', 'Hit_Chest', 'Hit_Head', 'Roll'];
@@ -43,6 +44,9 @@ const GOAL_TIME_MIN = 8;
 const GOAL_TIME_RAND = 6;
 const HUNT_CHANCE = 0.45;         // when wandering, chance to head for a known combatant
 const RESPAWN_TIME = 5;
+const BOX_SEEK_RANGE = 32;        // a bot with only a handgun detours to a ready box this close
+const BOX_SEEK_CHANCE = 0.7;
+const BURST_PAUSE_CHANCE = 0.12;  // automatic weapons: chance per shot to pause between bursts
 
 const _aim = new THREE.Vector3();
 const _to = new THREE.Vector3();
@@ -103,6 +107,10 @@ export class Bot extends Character {
     this.spawnPoints = spawnPoints;
     this.respawnTime = RESPAWN_TIME;
     this.gun = new GunState(HANDGUN, this, { infiniteReserve: true });
+    this.ads = true;            // bots count as scoped when holding a sniper
+    this.boxes = null;          // set by Bots
+    this.boxTarget = null;      // mystery box the bot is heading to
+    this.heldModels = {};       // third-person gun models, built when first needed
     this.yaw = Math.random() * Math.PI * 2;
 
     // Combat memory
@@ -318,18 +326,41 @@ export class Bot extends Character {
       const { object, muzzle } = normalizeGun(pistol, 0.2);
       holder.add(object);
       hand.add(holder);
+      this.gunHolder = holder;
+      this.heldModels.pistol = { object, muzzle };
       const m = new THREE.Object3D();
-      m.position.copy(muzzle);
-      object.add(m);
       this.flash.removeFromParent();
       m.add(this.flash);
       this.muzzle = m;
+      this.showHeldGun();
 
       if (aim) aim.stop();
     }
 
     this.currentAnim = null;
     this.playAnim('Pistol_Idle_Loop');
+  }
+
+  // Swap the gun this bot holds (fresh magazine, usable at once)
+  equipGun(spec) {
+    this.gun = new GunState(spec, this, { infiniteReserve: true });
+    this.showHeldGun();
+  }
+
+  showHeldGun() {
+    if (!this.gunHolder) return;
+    const kind = this.gun.spec.model;
+    let entry = this.heldModels[kind];
+    if (!entry) {
+      entry = buildGunModel(this.gun.spec);
+      entry.object.scale.setScalar(0.85);
+      this.gunHolder.add(entry.object);
+      this.heldModels[kind] = entry;
+    }
+    for (const [k, e] of Object.entries(this.heldModels)) e.object.visible = k === kind;
+    this.muzzle.removeFromParent();
+    this.muzzle.position.copy(entry.muzzle); // in the gun's own (unscaled) space
+    entry.object.add(this.muzzle);
   }
 
   playAnim(name, fade = 0.15) {
@@ -386,7 +417,8 @@ export class Bot extends Character {
   respawn(fixed = false) {
     if (!fixed) this.spawn.copy(this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)]);
     super.respawn();
-    this.gun.refill();
+    this.equipGun(HANDGUN);
+    this.boxTarget = null;
     this.target = null;
     this.targetVisible = false;
     this.path = [];
@@ -484,8 +516,29 @@ export class Bot extends Character {
     return this.match && this.match.state === 'live';
   }
 
+  // Only a handgun: go roll a mystery box if a ready one is close and inside the zone
+  pickBox(m) {
+    if (!this.boxes || this.gun.spec !== HANDGUN || Math.random() > BOX_SEEK_CHANCE) return false;
+    let best = null;
+    let bestD = BOX_SEEK_RANGE;
+    for (const b of this.boxes.active()) {
+      if (!b.ready || (m && !m.insideNext(b.position))) continue;
+      const d = b.position.distanceTo(this.position);
+      if (d < bestD) { best = b; bestD = d; }
+    }
+    if (!best) return false;
+    // Stand in front of the box (its local +Z side)
+    const front = new THREE.Vector3(0, 0, 1.1).applyQuaternion(best.group.quaternion);
+    this.goal = best.position.clone().add(front);
+    this.boxTarget = best;
+    this.goalTimer = 12;
+    return true;
+  }
+
   pickGoal() {
     const m = this.zoneLive() ? this.match : null;
+    this.boxTarget = null;
+    if (this.pickBox(m)) return;
     const others = this.world.combatants.filter((c) => c !== this && !c.dead && (!m || m.insideNext(c.position)));
     if (others.length && Math.random() < HUNT_CHANCE) {
       let near = others[0];
@@ -561,13 +614,19 @@ export class Bot extends Character {
       const e = this.eye();
       _to.set(t.position.x - e.x, t.position.y + t.height * 0.6 - e.y, t.position.z - e.z).normalize();
       const err = Math.acos(Math.min(1, _aim.dot(_to)));
-      if (err < FIRE_CONE && this.shotGap <= 0 && this.gun.canFire()) {
+      const spec = this.gun.spec;
+      // A sniper waits for a steadier aim before taking its one big shot
+      const cone = spec.scope ? FIRE_CONE * 0.35 : FIRE_CONE;
+      const settled = !spec.scope || this.trackTime > 0.8;
+      if (err < cone && settled && this.shotGap <= 0 && this.gun.canFire()) {
         const r = this.gun.fire(this.world, e, _aim);
         if (r.fired) {
           this.muzzle.getWorldPosition(_muzzle);
           this.world.addTracer(_muzzle, r.end);
           this.flashTimer = 0.05;
-          this.shotGap = SHOT_GAP_MIN + Math.random() * SHOT_GAP_RAND;
+          // Automatic weapons fire in bursts; others keep a human-ish gap between shots
+          if (spec.auto) this.shotGap = Math.random() < BURST_PAUSE_CHANCE ? 0.25 + Math.random() * 0.3 : 0;
+          else this.shotGap = SHOT_GAP_MIN + Math.random() * SHOT_GAP_RAND;
           this.stopTimer = STOP_TO_SHOOT;
           this.shootAnim = 0.3;
         }
@@ -631,6 +690,18 @@ export class Bot extends Character {
       if (t) {
         dest = this.lastKnown;
       } else {
+        // At the box: use it
+        const bt = this.boxTarget;
+        if (bt) {
+          if (!bt.ready || !bt.group.visible) {
+            this.boxTarget = null;
+            this.goal = null;
+          } else if (this.boxes.inReach(this) === bt) {
+            bt.spin(this, (spec) => { if (!this.dead) this.equipGun(spec); });
+            this.boxTarget = null;
+            this.goal = null;
+          }
+        }
         this.goalTimer -= dt;
         if (!this.goal || this.goalTimer <= 0 ||
             Math.hypot(this.goal.x - this.position.x, this.goal.z - this.position.z) < 1.5 ||
@@ -798,10 +869,12 @@ export class Bot extends Character {
 }
 
 export class Bots {
-  constructor(scene, world, nav, spawnPoints, count = 4) {
+  constructor(scene, world, nav, spawnPoints, count = 4, boxes = null) {
     this.list = [];
     for (let i = 0; i < count; i++) {
-      this.list.push(new Bot(scene, world, nav, spawnPoints[i % spawnPoints.length], i, spawnPoints));
+      const b = new Bot(scene, world, nav, spawnPoints[i % spawnPoints.length], i, spawnPoints);
+      b.boxes = boxes;
+      this.list.push(b);
     }
     for (const b of this.list) world.add(b);
   }

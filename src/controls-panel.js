@@ -123,6 +123,8 @@ export function buildControlsPanel(container, hints) {
         chip([b('sprint')], 'sprint'),
         chip([b('crouch')], 'slide / crouch'),
         chip(['Mouse'], 'shoot'),
+        chip(['RMB'], 'scope (sniper)'),
+        chip([b('interact')], 'mystery box'),
         chip([b('reload')], 'reload'),
         chip([b('weapon1'), b('weapon2')], 'weapons'),
         chip([b('flip')], 'flip knife'),
