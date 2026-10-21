@@ -1,3 +1,17 @@
 node_modules/
 dist/
 .DS_Store
+
+# Never commit secrets or local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*service-account*.json
+.firebase/
+firebase-debug.log
+npm-debug.log*

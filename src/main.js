@@ -175,8 +175,11 @@ world.onKill((killer, victim, how) => {
   setTimeout(() => line.remove(), 5000);
 });
 
-// Debug handle for automated testing
-window.agilos = {
+// Debug handle for automated testing. Only exposed in local dev or with ?debug in the URL,
+// so it isn't sitting on every player's window object. (Everything client-side can be
+// changed by a determined player anyway; real anti-cheat needs an authoritative server.)
+const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
+if (DEBUG) window.agilos = {
   player, weapon, knife, setWeapon, world, nav, bots, match, renderer, scene, postfx,
   get kills() { return player.kills; },
 };

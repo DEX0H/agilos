@@ -28,12 +28,29 @@ export const loadPistol = (name = PISTOL) => once(`gun_${name}`, () => fbx.loadA
 // `length` metres long, origin where the hand holds the grip.
 // The muzzle end is the end farther from the grip, so no per-model tuning is needed.
 // Returns { object, muzzle } where muzzle is the barrel tip in the object's space.
+// The FBX export reads as fully transparent with near-black colours, so gun materials are
+// rebuilt as PBR materials from their names.
+const GUN_PALETTE = {
+  Metal: 0x4d5157, LightMetal: 0x8d9198, DarkMetal: 0x2c2f33, Black: 0x1c1d20,
+  Wood: 0x7a4f30, Brown: 0x7a4f30, Grey: 0x6b6e73, Gray: 0x6b6e73, Green: 0x5b6a45,
+};
+function gunMaterial(m) {
+  const metal = /metal/i.test(m.name);
+  const fallback = m.color ? m.color.clone().multiplyScalar(4) : new THREE.Color(0x555555);
+  return new THREE.MeshStandardMaterial({
+    name: m.name,
+    color: GUN_PALETTE[m.name] !== undefined ? new THREE.Color(GUN_PALETTE[m.name]) : fallback,
+    roughness: metal ? 0.35 : 0.65,
+    metalness: metal ? 0.8 : 0.1,
+  });
+}
+
 export function normalizeGun(source, length) {
   const gun = source.clone(true);
   gun.traverse((o) => {
     if (o.isMesh) {
       o.castShadow = true;
-      o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+      o.material = Array.isArray(o.material) ? o.material.map(gunMaterial) : gunMaterial(o.material);
     }
   });
   gun.updateMatrixWorld(true);
