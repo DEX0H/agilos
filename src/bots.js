@@ -3,10 +3,10 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Character, STAND_H, NO_INPUT } from './character.js';
 import { GunState, HANDGUN } from './gun.js';
-import { loadRobot } from './models.js';
+import { loadCharacter, loadAnimations, loadPistol, normalizeGun } from './models.js';
 
-// Damaged colour for each robot material, by material name
-const ROBOT_HURT = { Main: 0xb3120c, Grey: 0x7a2a24, Black: 0x3a0806 };
+// Animations that play once and hold their last frame
+const ONE_SHOT_ANIMS = ['Jump_Start', 'Jump_Land', 'Death01', 'Pistol_Shoot', 'Pistol_Reload', 'Hit_Chest', 'Hit_Head', 'Roll'];
 const DEATH_SHOW = 1.6; // seconds the death animation stays visible
 
 // Bots play like players: same Character movement (sprint, slide, double jump,
@@ -236,86 +236,102 @@ export class Bot extends Character {
     this.walkPhase = Math.random() * Math.PI * 2;
     scene.add(this.group);
 
-    // Swap in the animated robot once it has loaded; the simple model stays as a fallback
+    // Swap in the animated human once it has loaded; the simple model stays as a fallback
     this.bodyColor = bodyColor;
-    this.robot = null;
+    this.human = null;
     this.mixer = null;
     this.deathTime = 0;
-    loadRobot().then((gltf) => this.useRobot(gltf)).catch(() => {});
+    this.shootAnim = 0;
+    const kind = index % 2 === 0 ? 'male' : 'female';
+    Promise.all([loadCharacter(kind), loadAnimations(), loadPistol()])
+      .then(([g, clips, pistol]) => this.useHuman(g, clips, pistol))
+      .catch((e) => console.warn('Bot model failed to load; keeping the simple model', e));
   }
 
-  useRobot(gltf) {
-    const model = SkeletonUtils.clone(gltf.scene);
+  useHuman(g, clips, pistol) {
+    const model = SkeletonUtils.clone(g.scene);
 
-    // Stand it on the ground at 1.8 m tall. `precise` measures the skinned (posed) vertices;
-    // the raw geometry is in a different scale from the armature.
+    // Stand it on the ground at 1.8 m. `precise` measures the skinned vertices.
     model.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(model, true);
     const s = STAND_H / Math.max(0.01, box.max.y - box.min.y);
     model.scale.setScalar(s);
     model.position.y = -box.min.y * s;
 
-    // Own materials per bot, tinted with the bot's colour
+    // Own materials per bot, lightly tinted with the bot's colour so they're easy to tell apart.
+    // As health drops they shift toward red (see animate()).
+    const tint = new THREE.Color(this.bodyColor).lerp(new THREE.Color(0xffffff), 0.45);
     const mats = [];
     model.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = true;
+      o.frustumCulled = false; // skinned bounds don't follow the animation
       o.material = o.material.clone();
-      if (o.material.name === 'Main') o.material.color.set(this.bodyColor);
+      if (!/eye/i.test(o.material.name)) o.material.color.lerp(tint, 0.55);
       mats.push(o.material);
     });
     this.flashMats = mats;
     this.healthyColors = mats.map((m) => m.color.clone());
-    this.hurtColors = mats.map((m) => new THREE.Color(ROBOT_HURT[m.name] ?? 0x8a1a12));
+    this.hurtColors = mats.map((m) => (/eye/i.test(m.name) ? m.color.clone() : new THREE.Color(0xff2a1c)));
     this.shownHurt = -1;
 
-    // Hide the simple model and add the robot to the squashable body
     for (const c of this.body.children) c.visible = false;
     this.body.add(model);
-    this.robot = model;
-
-    // Handgun in the right hand, sized in metres whatever the bone scale is
-    const hand = model.getObjectByName('Palm2.R') || model.getObjectByName('LowerArm.R');
-    if (hand) {
-      model.updateMatrixWorld(true);
-      const ws = new THREE.Vector3();
-      hand.getWorldScale(ws);
-      const gun = new THREE.Group();
-      gun.scale.setScalar(1 / Math.max(1e-6, ws.x));
-      const gunMat = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.4, metalness: 0.7 });
-      const body = new THREE.Mesh(new RoundedBoxGeometry(0.05, 0.08, 0.22, 2, 0.015), gunMat);
-      body.position.set(0, 0, 0.08);
-      body.castShadow = true;
-      const grip = new THREE.Mesh(new RoundedBoxGeometry(0.045, 0.11, 0.05, 2, 0.012), gunMat);
-      grip.position.set(0, -0.06, 0.0);
-      gun.add(body, grip);
-      gun.rotation.set(Math.PI / 2, 0, 0); // barrel along the hand's pointing axis
-      hand.add(gun);
-
-      const muzzle = new THREE.Object3D();
-      muzzle.position.set(0, 0, 0.2);
-      gun.add(muzzle);
-      this.flash.removeFromParent();
-      muzzle.add(this.flash);
-      this.muzzle = muzzle;
-    }
+    this.human = model;
 
     // Animations
     this.mixer = new THREE.AnimationMixer(model);
     this.actions = {};
-    for (const clip of gltf.animations) this.actions[clip.name] = this.mixer.clipAction(clip);
-    for (const name of ['Jump', 'Death', 'Sitting']) {
+    for (const clip of clips) this.actions[clip.name] = this.mixer.clipAction(clip);
+    for (const name of ONE_SHOT_ANIMS) {
       const a = this.actions[name];
       if (a) {
         a.setLoop(THREE.LoopOnce, 1);
         a.clampWhenFinished = true;
       }
     }
+
+    // Pistol in the right hand. Pose the aim animation once and fit the gun so it
+    // points where the character faces in that pose; it then follows the hand.
+    const hand = model.getObjectByName('hand_r');
+    const fingers = model.getObjectByName('middle_01_r');
+    if (hand) {
+      const aim = this.actions.Pistol_Aim_Neutral;
+      if (aim) {
+        aim.play();
+        this.mixer.update(0);
+      }
+      model.updateMatrixWorld(true);
+
+      const ws = new THREE.Vector3();
+      hand.getWorldScale(ws);
+      const holder = new THREE.Group();          // undoes the bone's scale: inside it, units are metres
+      holder.scale.setScalar(1 / Math.max(1e-6, ws.x));
+      if (fingers) holder.position.copy(fingers.position).multiplyScalar(0.55); // palm centre
+
+      const handQ = hand.getWorldQuaternion(new THREE.Quaternion());
+      const facing = model.getWorldQuaternion(new THREE.Quaternion())
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)); // gun -Z -> model +Z
+      holder.quaternion.copy(handQ.invert().multiply(facing));
+
+      const { object, muzzle } = normalizeGun(pistol, 0.2);
+      holder.add(object);
+      hand.add(holder);
+      const m = new THREE.Object3D();
+      m.position.copy(muzzle);
+      object.add(m);
+      this.flash.removeFromParent();
+      m.add(this.flash);
+      this.muzzle = m;
+
+      if (aim) aim.stop();
+    }
+
     this.currentAnim = null;
-    this.playAnim('Idle');
+    this.playAnim('Pistol_Idle_Loop');
   }
 
-  playAnim(name, fade = 0.18) {
+  playAnim(name, fade = 0.15) {
     if (!this.mixer || this.currentAnim === name) return;
     const next = this.actions[name];
     if (!next) return;
@@ -325,17 +341,30 @@ export class Bot extends Character {
     this.currentAnim = name;
   }
 
-  // Pick the robot animation from what the character is doing
-  animateRobot(dt) {
+  // Pick the animation from what the character is doing
+  animateHuman(dt) {
     const hs = Math.hypot(this.velocity.x, this.velocity.z);
-    if (this.dead) this.playAnim('Death', 0.1);
-    else if (this.sliding || this.state === 'crouch') this.playAnim('Sitting', 0.12);
-    else if (!this.onGround) this.playAnim('Jump', 0.12);
-    else if (hs > 6) this.playAnim('Running');
-    else if (hs > 0.6) this.playAnim('Walking');
-    else this.playAnim('Idle');
-    if (this.currentAnim === 'Running') this.currentAction.setEffectiveTimeScale(hs / 8);
-    if (this.currentAnim === 'Walking') this.currentAction.setEffectiveTimeScale(Math.max(0.6, hs / 4));
+    let name;
+    if (this.dead) name = 'Death01';
+    else if (this.sliding) name = 'Crouch_Idle_Loop';
+    else if (this.state === 'crouch') name = hs > 0.6 ? 'Crouch_Fwd_Loop' : 'Crouch_Idle_Loop';
+    else if (!this.onGround) name = 'Jump_Loop';
+    else if (hs > 8) name = 'Sprint_Loop';
+    else if (hs > 4.5) name = 'Jog_Fwd_Loop';
+    else if (hs > 0.6) name = 'Walk_Loop';
+    else if (this.gun.reloadTimer > 0) name = 'Pistol_Reload';
+    else if (this.shootAnim > 0) name = 'Pistol_Shoot';
+    else if (this.target && this.targetVisible) name = 'Pistol_Aim_Neutral';
+    else name = 'Pistol_Idle_Loop';
+    this.playAnim(name, name === 'Death01' ? 0.08 : 0.15);
+
+    const a = this.currentAction;
+    if (a) {
+      if (name === 'Sprint_Loop') a.setEffectiveTimeScale(hs / 10);
+      else if (name === 'Jog_Fwd_Loop') a.setEffectiveTimeScale(hs / 6);
+      else if (name === 'Walk_Loop') a.setEffectiveTimeScale(Math.max(0.6, hs / 2.5));
+      else if (name === 'Crouch_Fwd_Loop') a.setEffectiveTimeScale(Math.max(0.6, hs / 2.5));
+    }
     this.mixer.update(dt);
   }
 
@@ -540,6 +569,7 @@ export class Bot extends Character {
           this.flashTimer = 0.05;
           this.shotGap = SHOT_GAP_MIN + Math.random() * SHOT_GAP_RAND;
           this.stopTimer = STOP_TO_SHOOT;
+          this.shootAnim = 0.3;
         }
       }
       if (this.gun.ammo === 0) this.gun.reload();
@@ -701,6 +731,7 @@ export class Bot extends Character {
   update(dt) {
     this.preUpdate(dt);
     this.gun.update(dt);
+    this.shootAnim = Math.max(0, this.shootAnim - dt);
     if (this.tickDead(dt)) {
       // With the robot, play the death animation briefly before the body disappears
       this.deathTime += dt;
@@ -710,7 +741,7 @@ export class Bot extends Character {
         this.tag.visible = false;
         this.bar.visible = false;
         this.bubble.visible = false;
-        this.animateRobot(dt);
+        this.animateHuman(dt);
       }
       return;
     }
@@ -758,7 +789,7 @@ export class Bot extends Character {
 
     this.flashTimer -= dt;
     this.flash.visible = this.flashTimer > 0;
-    if (this.mixer) this.animateRobot(dt);
+    if (this.mixer) this.animateHuman(dt);
 
     // Shield bubble pulses, and blinks in the last two seconds
     this.bubble.visible = this.shielded && (this.shieldTimer > 2 || Math.floor(this.shieldTimer * 6) % 2 === 0);

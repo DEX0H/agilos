@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GunState, HANDGUN } from './gun.js';
 import { settings, capture } from './settings.js';
+import { loadPistol, normalizeGun } from './models.js';
 
 // The player's handgun: first-person viewmodel and effects on top of the shared GunState.
 const RECOIL_PITCH = 0.03;     // camera kick up, radians
@@ -58,6 +59,19 @@ export class Handgun {
     this.model.position.set(0.24, -0.2, VIEW_BASE_Z);
     this.model.rotation.y = -0.05;
     camera.add(this.model);
+
+    // Swap the simple pistol for the real model once it has loaded (CC0, Quaternius)
+    const simple = [slide, barrel, frame, frontSight, handle, guard];
+    loadPistol().then((src) => {
+      const { object, muzzle } = normalizeGun(src, 0.24);
+      object.position.set(0, -0.07, 0.05); // hand point a little low and back, like a held grip
+      object.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+      this.model.add(object);
+      for (const p of simple) p.visible = false;
+      this.muzzle.removeFromParent();
+      this.muzzle.position.copy(muzzle);
+      object.add(this.muzzle);
+    }).catch((e) => console.warn('Pistol model failed to load; keeping the simple one', e));
 
     document.addEventListener('keydown', (e) => {
       if (!capture.action && e.code === settings.binds.reload && !e.repeat) this.gun.reload();
