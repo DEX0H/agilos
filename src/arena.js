@@ -108,6 +108,11 @@ export function buildArena(scene) {
   // length along the face, bottom and height. `mesh` is the plain box, hidden once the
   // facade has loaded (its collider stays).
   const facades = [];
+  // Floor slabs and roofs, for edge bands and ceiling lights (city.js)
+  const slabs = [];
+  const roofs = [];
+  // Rooftop AC units: solid, so their colliders are added here; city.js draws them
+  const rooftopProps = [];
 
   // One flight of floating steps outside side `side` of footprint b, from baseY up one story.
   // N runs +x from the west corner, E runs +z from the north corner,
@@ -186,7 +191,9 @@ export function buildArena(scene) {
 
     for (let i = 1; i <= stories; i++) {
       block(cx, cz, w, d, i * STORY, { bottomY: i * STORY - SLAB, trim: true });
+      slabs.push({ cx, cz, w, d, y: i * STORY, roof: i === stories });
     }
+    roofs.push({ cx, cz, w, d, y: roof });
 
     for (let i = 0; i < stories; i++) {
       let side = wallSides ? wallSides[i] : SIDE_ORDER[i % 4];
@@ -271,6 +278,30 @@ export function buildArena(scene) {
   jump([5.3, 12, -3], [9.7, 6, -3], true);          // tower roof drops to E roof
   jump([-5.3, 12, -3], [-9.7, 3, -3], true);        // tower roof drops to W roof
 
+  // Rooftop AC units in roof corners, clear of the crate, stairs, jumps and nav points
+  const AC_W = 1.35;
+  const AC_D = 0.55;
+  const AC_H = 0.9;
+  for (const r of roofs) {
+    const corners = [[-1, 1], [1, 1], [-1, -1]]; // the crate sits in the (+x, -z) quadrant
+    let placed = 0;
+    for (const [sx, sz] of corners) {
+      if (placed >= 2) break;
+      const x = r.cx + sx * (r.w / 2 - 1.4);
+      const z = r.cz + sz * (r.d / 2 - 1.2);
+      const clear = navPoints.every((p) => Math.abs(p.y - r.y) > 0.5 || Math.hypot(p.x - x, p.z - z) > 1.8);
+      if (!clear) continue;
+      const box = new THREE.Box3(
+        new THREE.Vector3(x - AC_W / 2, r.y, z - AC_D / 2),
+        new THREE.Vector3(x + AC_W / 2, r.y + AC_H, z + AC_D / 2),
+      );
+      if (colliders.some((c) => c.intersectsBox(box))) continue;
+      colliders.push(box);
+      rooftopProps.push({ x, y: r.y, z, facing: sz }); // vents face the nearer roof edge
+      placed++;
+    }
+  }
+
   // Ground grid of nav points wherever a body fits
   for (let x = -27.5; x <= 27.5; x += 5) {
     for (let z = -27.5; z <= 27.5; z += 5) {
@@ -309,5 +340,8 @@ export function buildArena(scene) {
   ];
   const chimneys = [new THREE.Vector3(-27.9, 0, -7.5), new THREE.Vector3(27.9, 0, 7.5)];
 
-  return { colliders, group, playerSpawn, mobSpawns, navPoints, navLinks, navJumps, facades, perimeterFaces, chimneys };
+  return {
+    colliders, group, playerSpawn, mobSpawns, navPoints, navLinks, navJumps,
+    facades, perimeterFaces, chimneys, slabs, roofs, rooftopProps,
+  };
 }
