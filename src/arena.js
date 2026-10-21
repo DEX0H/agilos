@@ -129,10 +129,45 @@ export function buildArena(scene) {
   // Tower in the north-west
   block(-3, -20, 3, 3, 6.5, { trim: true });
 
+  // ---- Movement course, north-east corner ----
+  // Wall-jump chimney: two tall walls 1.4 m apart. Bounce between them to climb.
+  const chimney = new THREE.Color(0x8a8f99);
+  block(18.0, -23, 0.4, 6, 5.5, { kind: 'metal', color: chimney, trim: true });
+  block(19.8, -23, 0.4, 6, 5.5, { kind: 'metal', color: chimney, trim: true });
+  // Ledge to mantle from, and a landing platform next to the chimney
+  block(16, -22, 2, 4, 1.2);
+  block(23, -22, 4, 4, 2.2, { trim: true });
+  // Slide gate: a beam at 1.25-1.9 m. Too low to walk under, slide or crouch through.
+  const beamColor = new THREE.Color(0x9a6b3a);
+  block(16.5, -14, 0.5, 0.5, 1.25, { kind: 'metal' });
+  block(27.5, -14, 0.5, 0.5, 1.25, { kind: 'metal' });
+  block(22, -14, 11, 0.6, 1.9, { bottomY: 1.25, kind: 'metal', color: beamColor });
+  // Rising floating platforms: jump, double jump, wall jump off the deck
+  block(21, -10, 2.5, 2.5, 2.6, { trim: true });
+  block(18, -8, 2, 2, 3.2, { trim: true });
+  block(24, -8, 3, 3, 4.0, { trim: true });
+
+  // ---- Movement course, south-west corner ----
+  // Second chimney
+  block(-22.0, 15, 0.4, 6, 5.0, { kind: 'metal', color: chimney, trim: true });
+  block(-20.2, 15, 0.4, 6, 5.0, { kind: 'metal', color: chimney, trim: true });
+  // Pillar ladder: 1 m, 2 m, 3 m, each a sprint-jump apart
+  block(-16, 22, 1.2, 1.2, 1.0);
+  block(-18.8, 24, 1.2, 1.2, 2.0, { trim: true });
+  block(-21.6, 22, 1.2, 1.2, 3.0, { trim: true });
+  // Mantle ledge and floating hops
+  block(-25, 24, 3, 2, 1.3);
+  block(-13, 14, 2, 2, 2.4, { trim: true });
+  block(-12, 19, 2, 2, 3.4, { trim: true });
+
+  // Wall-jump pillars in the open middle-south
+  block(4, 10, 0.8, 0.8, 4.5, { kind: 'metal', color: chimney, trim: true });
+  block(-3, 9, 0.8, 0.8, 4.5, { kind: 'metal', color: chimney, trim: true });
+
   // Low cover crates
   const crateColor = new THREE.Color(0xb08a5e);
   const crates = [
-    [6, -6], [-8, 6], [16, -14], [-18, 14],
+    [6, -6], [-8, 6],
     [22, -4], [-4, -18], [8, 18], [-24, -4],
   ];
   for (const [x, z] of crates) block(x, z, 1.4, 1.4, 1.0, { kind: 'wood', color: crateColor });

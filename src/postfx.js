@@ -101,5 +101,5 @@ export function createPostFx(renderer, scene, camera) {
     gtao.setSize(w * p, h * p);
   }
 
-  return { composer, bloom, grade, resize };
+  return { composer, bloom, grade, gtao, resize };
 }

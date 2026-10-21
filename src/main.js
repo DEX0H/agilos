@@ -9,8 +9,18 @@ import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
 import { createDust } from './dust.js';
 
-const renderer = new THREE.WebGLRenderer({ antialias: false });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Low-latency canvas: `desynchronized` lets the browser present frames without
+// waiting on the page compositor where supported (Chrome, Edge).
+const canvas = document.createElement('canvas');
+const gl = canvas.getContext('webgl2', {
+  antialias: false,
+  alpha: false,
+  desynchronized: true,
+  powerPreference: 'high-performance',
+});
+const renderer = new THREE.WebGLRenderer({ canvas, context: gl });
+const HIGH_PR = Math.min(window.devicePixelRatio, 1.5);
+renderer.setPixelRatio(HIGH_PR);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -45,6 +55,18 @@ function setWeapon(w) {
   weapon.model.visible = w === weapon;
   knife.model.visible = w === knife;
 }
+// P toggles quality: high = ambient occlusion and sharper pixels, low = fastest frames
+let quality = 'high';
+function setQuality(q) {
+  quality = q;
+  renderer.setPixelRatio(q === 'high' ? HIGH_PR : 1);
+  postfx.gtao.enabled = q === 'high';
+  postfx.resize(window.innerWidth, window.innerHeight);
+}
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyP' && !e.repeat) setQuality(quality === 'high' ? 'low' : 'high');
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Digit1') setWeapon(weapon);
   if (e.code === 'Digit2') setWeapon(knife);
@@ -61,6 +83,7 @@ const damageVignette = document.getElementById('damage');
 const deadMsg = document.getElementById('dead');
 
 let kills = 0;
+let fps = 60;
 let hitmarkerTimer = 0;
 
 const lockMsg = document.getElementById('lockmsg');
@@ -79,9 +102,10 @@ function showLockFailed() {
 document.addEventListener('pointerlockerror', showLockFailed);
 document.addEventListener('agilos:lockfailed', showLockFailed);
 
-// Left click fires while the mouse is locked
+// Left click fires the instant the button goes down, against the latest aim
 document.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !player.locked) return;
+  player.syncAim();
   const r = active.fire(enemies, colliders);
   if (r.hit) hitmarkerTimer = 0.15;
   if (r.kill) kills++;
@@ -101,6 +125,7 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
   const t = now / 1000;
+  if (dt > 0) fps += (1 / dt - fps) * 0.05;
   last = now;
 
   player.update(dt);
@@ -127,7 +152,8 @@ function frame(now) {
     `speed   ${Math.hypot(v.x, v.z).toFixed(1)} m/s\n` +
     `vert    ${v.y.toFixed(1)} m/s\n` +
     `pos     ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}\n` +
-    `ground  ${player.onGround ? 'yes' : 'no'}   double jump ${player.canDouble ? 'ready' : 'used'}`;
+    `state   ${player.state}   double jump ${player.canDouble ? 'ready' : 'used'}\n` +
+    `fps     ${fps.toFixed(0)}   quality ${quality} (P)`;
 
   postfx.composer.render(dt);
   requestAnimationFrame(frame);
