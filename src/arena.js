@@ -101,7 +101,13 @@ export function buildArena(scene) {
       new THREE.Vector3(x - w / 2, bottomY, z - d / 2),
       new THREE.Vector3(x + w / 2, top, z + d / 2),
     ));
+    return mesh;
   }
+
+  // Walls that get city facade modules (see city.js): outer face centre, outward normal,
+  // length along the face, bottom and height. `mesh` is the plain box, hidden once the
+  // facade has loaded (its collider stays).
+  const facades = [];
 
   // One flight of floating steps outside side `side` of footprint b, from baseY up one story.
   // N runs +x from the west corner, E runs +z from the north corner,
@@ -151,10 +157,16 @@ export function buildArena(scene) {
     const cz = (b.z0 + b.z1) / 2;
     // Brick on most buildings, painted plaster on some, for variety
     const opts = { bottomY: baseY, color: wallColor, kind: (Math.round(b.x0 + b.z0) & 2) ? 'plaster' : 'brick' };
-    if (side === 'N') block((cx + b.x1) / 2, b.z0 + WALL_T / 2, b.x1 - cx, WALL_T, topY, opts);
-    if (side === 'E') block(b.x1 - WALL_T / 2, (cz + b.z1) / 2, WALL_T, b.z1 - cz, topY, opts);
-    if (side === 'S') block((b.x0 + cx) / 2, b.z1 - WALL_T / 2, cx - b.x0, WALL_T, topY, opts);
-    if (side === 'W') block(b.x0 + WALL_T / 2, (b.z0 + cz) / 2, WALL_T, cz - b.z0, topY, opts);
+    const f = { bottomY: baseY, height: topY - baseY, ground: baseY === 0 };
+    if (side === 'N') Object.assign(f, { mesh: block((cx + b.x1) / 2, b.z0 + WALL_T / 2, b.x1 - cx, WALL_T, topY, opts),
+      x: (cx + b.x1) / 2, z: b.z0, nx: 0, nz: -1, length: b.x1 - cx });
+    if (side === 'E') Object.assign(f, { mesh: block(b.x1 - WALL_T / 2, (cz + b.z1) / 2, WALL_T, b.z1 - cz, topY, opts),
+      x: b.x1, z: (cz + b.z1) / 2, nx: 1, nz: 0, length: b.z1 - cz });
+    if (side === 'S') Object.assign(f, { mesh: block((b.x0 + cx) / 2, b.z1 - WALL_T / 2, cx - b.x0, WALL_T, topY, opts),
+      x: (b.x0 + cx) / 2, z: b.z1, nx: 0, nz: 1, length: cx - b.x0 });
+    if (side === 'W') Object.assign(f, { mesh: block(b.x0 + WALL_T / 2, (b.z0 + cz) / 2, WALL_T, cz - b.z0, topY, opts),
+      x: b.x0, z: (b.z0 + cz) / 2, nx: -1, nz: 0, length: cz - b.z0 });
+    facades.push(f);
   }
 
   // Open-sided building: corner pillars, a floor slab per story, one wall chunk per story,
@@ -288,5 +300,14 @@ export function buildArena(scene) {
     new THREE.Vector3(17.5, 6, 17.5),    // SE 2F
   ];
 
-  return { colliders, group, playerSpawn, mobSpawns, navPoints, navLinks, navJumps };
+  // Inner faces of the perimeter walls get full city-block facades
+  const perimeterFaces = [
+    { x: 0, z: -29.5, nx: 0, nz: 1, length: 58 },
+    { x: 0, z: 29.5, nx: 0, nz: -1, length: 58 },
+    { x: -29.5, z: 0, nx: 1, nz: 0, length: 58 },
+    { x: 29.5, z: 0, nx: -1, nz: 0, length: 58 },
+  ];
+  const chimneys = [new THREE.Vector3(-27.9, 0, -7.5), new THREE.Vector3(27.9, 0, 7.5)];
+
+  return { colliders, group, playerSpawn, mobSpawns, navPoints, navLinks, navJumps, facades, perimeterFaces, chimneys };
 }
