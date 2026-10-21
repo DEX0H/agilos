@@ -1,24 +1,8 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { raycastWorld } from './physics.js';
+import { GunState, HANDGUN } from './gun.js';
 
-// Handgun: semi-auto, hitscan, recoil, reload.
-const RANGE = 150;
-const MAG_SIZE = 12;
-const RESERVE_START = 48;
-const RELOAD_TIME = 1.4;
-const FIRE_INTERVAL = 0.22;
-const DAMAGE = 25;
-const HEADSHOT_MULT = 2.5;
-// CS-style accuracy: perfect first shot standing still, worse moving or in the air,
-// and fast follow-up shots add bloom that recovers. Sliding stays fairly accurate (Apex feel).
-const MOVE_SPREAD = 0.03;      // radians at full sprint speed
-const AIR_SPREAD = 0.06;
-const SLIDE_SPREAD = 0.012;
-const CROUCH_MULT = 0.6;
-const SHOT_BLOOM = 0.012;      // added per shot
-const BLOOM_RECOVERY = 6;      // exponential recovery rate per second
-const MAX_BLOOM = 0.05;
+// The player's handgun: first-person viewmodel and effects on top of the shared GunState.
 const RECOIL_PITCH = 0.03;     // camera kick up, radians
 const RECOIL_YAW_JITTER = 0.012;
 const VIEW_BASE_Z = -0.42;
@@ -26,26 +10,17 @@ const VIEW_BASE_Z = -0.42;
 const _origin = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
-const _end = new THREE.Vector3();
-const _right = new THREE.Vector3();
-const _up = new THREE.Vector3();
 
 export class Handgun {
   constructor(camera, scene, player) {
     this.camera = camera;
     this.scene = scene;
     this.player = player;
-    this.magSize = MAG_SIZE;
-    this.ammo = MAG_SIZE;
-    this.reserve = RESERVE_START;
-    this.reloadTimer = 0;
-    this.cooldown = 0;
+    this.gun = new GunState(HANDGUN, player);
     this.viewKick = 0;
     this.flashTimer = 0;
-    this.bloom = 0;
-    this.tracers = [];
 
-    // First-person viewmodel, parented to the camera. Rounded parts, not boxes.
+    // First-person viewmodel, parented to the camera
     this.model = new THREE.Group();
     const metal = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.35, metalness: 0.7 });
     const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1a1c20, roughness: 0.5, metalness: 0.6 });
@@ -83,121 +58,52 @@ export class Handgun {
     this.model.rotation.y = -0.05;
     camera.add(this.model);
 
-    this.onKeyDown = (e) => {
-      if (e.code === 'KeyR' && !e.repeat) this.reload();
-    };
-    document.addEventListener('keydown', this.onKeyDown);
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyR' && !e.repeat) this.gun.reload();
+    });
   }
+
+  get ammo() { return this.gun.ammo; }
+  get magSize() { return this.gun.magSize; }
+  get reserve() { return this.gun.reserve; }
+  get reloadTimer() { return this.gun.reloadTimer; }
 
   reload() {
-    if (this.reloadTimer > 0 || this.ammo === this.magSize || this.reserve <= 0) return;
-    this.reloadTimer = RELOAD_TIME;
+    this.gun.reload();
   }
 
-  finishReload() {
-    const need = this.magSize - this.ammo;
-    const take = Math.min(need, this.reserve);
-    this.ammo += take;
-    this.reserve -= take;
-    this.reloadTimer = 0;
+  currentSpread() {
+    return this.gun.spread();
   }
 
-  // Returns { hit, headshot, kill } for the HUD.
-  fire(enemies, colliders) {
-    const result = { hit: false, headshot: false, kill: false };
-    if (this.reloadTimer > 0 || this.cooldown > 0 || this.player.dead) return result;
-    if (this.ammo <= 0) {
-      this.reload();
-      return result;
-    }
+  // Fires along the camera's exact aim. Returns { fired, hit, headshot, kill, ... }.
+  fire(world) {
+    this.camera.getWorldPosition(_origin);
+    this.camera.getWorldDirection(_dir);
+    const r = this.gun.fire(world, _origin, _dir);
+    if (!r.fired) return r;
 
-    this.ammo--;
-    this.cooldown = FIRE_INTERVAL;
     this.viewKick = 0.05;
     this.flashTimer = 0.05;
     this.flash.visible = true;
     this.player.addRecoil(RECOIL_PITCH, (Math.random() - 0.5) * RECOIL_YAW_JITTER);
-
-    // Spread cone around the exact aim, built on the camera's own right/up axes
-    const spread = this.currentSpread();
-    this.bloom = Math.min(MAX_BLOOM, this.bloom + SHOT_BLOOM);
-    this.camera.getWorldPosition(_origin);
-    this.camera.getWorldDirection(_dir);
-    if (spread > 0) {
-      _right.setFromMatrixColumn(this.camera.matrixWorld, 0);
-      _up.setFromMatrixColumn(this.camera.matrixWorld, 1);
-      const r = spread * Math.sqrt(Math.random());
-      const a = Math.random() * Math.PI * 2;
-      _dir.addScaledVector(_right, Math.cos(a) * r).addScaledVector(_up, Math.sin(a) * r).normalize();
-    }
     this.muzzle.getWorldPosition(_muzzle);
-
-    const worldDist = raycastWorld(_origin, _dir, RANGE, colliders);
-    const maxDist = Math.min(RANGE, worldDist);
-    _end.copy(_origin).addScaledVector(_dir, maxDist);
-
-    const hit = enemies.raycastHit(_origin, _dir, maxDist);
-    if (hit) {
-      result.hit = true;
-      result.headshot = hit.headshot;
-      _end.copy(hit.point);
-      const dmg = DAMAGE * (hit.headshot ? HEADSHOT_MULT : 1);
-      result.kill = hit.mob.takeHit(dmg);
-    }
-
-    this.addTracer(_muzzle, _end);
-    return result;
-  }
-
-  // Current cone half-angle in radians, from movement state plus shot bloom
-  currentSpread() {
-    const p = this.player;
-    const hs = Math.hypot(p.velocity.x, p.velocity.z);
-    let s;
-    if (p.sliding) s = SLIDE_SPREAD;
-    else if (!p.onGround) s = AIR_SPREAD;
-    else s = MOVE_SPREAD * Math.min(1, hs / 10);
-    if (p.state === 'crouch') s *= CROUCH_MULT;
-    return s + this.bloom;
-  }
-
-  addTracer(a, b) {
-    const geom = new THREE.BufferGeometry().setFromPoints([a.clone(), b.clone()]);
-    const mat = new THREE.LineBasicMaterial({ color: new THREE.Color(4, 3, 1.6), transparent: true, opacity: 0.9 });
-    const line = new THREE.Line(geom, mat);
-    this.scene.add(line);
-    this.tracers.push({ line, life: 0.06 });
+    world.addTracer(_muzzle, r.end);
+    return r;
   }
 
   update(dt) {
-    this.cooldown = Math.max(0, this.cooldown - dt);
-    this.bloom *= Math.exp(-BLOOM_RECOVERY * dt);
-
-    if (this.reloadTimer > 0) {
-      this.reloadTimer -= dt;
-      if (this.reloadTimer <= 0) this.finishReload();
-    }
+    this.gun.update(dt);
 
     // Recoil kick on the viewmodel settles back
     this.viewKick *= Math.exp(-14 * dt);
     this.model.position.z = VIEW_BASE_Z + this.viewKick;
 
     // Tilt the gun down while reloading
-    const targetTilt = this.reloadTimer > 0 ? 0.35 : 0;
+    const targetTilt = this.gun.reloadTimer > 0 ? 0.35 : 0;
     this.model.rotation.x += (targetTilt - this.model.rotation.x) * Math.min(1, dt * 10);
 
     this.flashTimer -= dt;
     this.flash.visible = this.flashTimer > 0;
-
-    for (let i = this.tracers.length - 1; i >= 0; i--) {
-      const t = this.tracers[i];
-      t.life -= dt;
-      if (t.life <= 0) {
-        this.scene.remove(t.line);
-        t.line.geometry.dispose();
-        t.line.material.dispose();
-        this.tracers.splice(i, 1);
-      }
-    }
   }
 }

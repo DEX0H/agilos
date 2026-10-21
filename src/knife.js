@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { raycastWorld } from './physics.js';
 
 // Combat knife: melee slash in a short arc, plus a flip animation (F, or automatically when idle).
 const RANGE = 1.9;             // reach in metres
@@ -89,9 +88,10 @@ export class Knife {
   }
 
   // Returns { hit, headshot, kill } like the handgun.
-  fire(enemies, colliders) {
-    const result = { hit: false, headshot: false, kill: false };
+  fire(world) {
+    const result = { fired: false, hit: false, headshot: false, kill: false };
     if (this.cooldown > 0 || this.player.dead) return result;
+    result.fired = true;
 
     this.cooldown = COOLDOWN;
     this.slashTimer = SLASH_TIME;
@@ -104,20 +104,22 @@ export class Knife {
 
     let best = null;
     let bestDist = RANGE;
-    for (const mob of enemies.mobs) {
-      if (!mob.alive) continue;
-      _to.set(mob.position.x, mob.position.y + 0.9, mob.position.z).sub(_origin);
+    for (const c of world.combatants) {
+      if (c === this.player || c.dead) continue;
+      const centre = new THREE.Vector3(c.position.x, c.position.y + c.height * 0.5, c.position.z);
+      _to.copy(centre).sub(_origin);
       const d = _to.length();
       if (d > bestDist) continue;
       if (_to.dot(_dir) / d < ARC_COS) continue;
-      if (raycastWorld(_origin, _to.clone().normalize(), d, colliders) < d - 0.05) continue;
-      best = mob;
+      if (!world.lineOfSight(_origin, centre)) continue;
+      best = c;
       bestDist = d;
     }
 
     if (best) {
       result.hit = true;
-      result.kill = best.takeHit(DAMAGE);
+      result.kill = best.takeDamage(DAMAGE, this.player);
+      if (result.kill) world.reportKill(this.player, best, 'knife');
     }
     return result;
   }

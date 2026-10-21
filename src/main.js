@@ -4,7 +4,9 @@ import { buildArena } from './arena.js';
 import { Player } from './player.js';
 import { Handgun } from './weapon.js';
 import { Knife } from './knife.js';
-import { Enemies } from './enemies.js';
+import { World } from './world.js';
+import { NavGraph } from './nav.js';
+import { Bots } from './bots.js';
 import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
 import { createDust } from './dust.js';
@@ -42,12 +44,34 @@ const sky = createSky(scene);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 300);
 scene.add(camera); // the gun viewmodel is a child of the camera
 
-const { colliders, playerSpawn, mobSpawns } = buildArena(scene);
+// ---- Game world ----
+const { colliders, playerSpawn, mobSpawns, navPoints, navLinks } = buildArena(scene);
+const world = new World(scene, colliders);
 const player = new Player(camera, colliders, playerSpawn);
+world.add(player);
+const nav = new NavGraph(colliders, navPoints, navLinks);
+const bots = new Bots(scene, world, nav, mobSpawns);
+
 const weapon = new Handgun(camera, scene, player);
 const knife = new Knife(camera, scene, player);
 let active = weapon;
-const enemies = new Enemies(scene, colliders, mobSpawns);
+
+const dust = createDust(scene);
+const postfx = createPostFx(renderer, scene, camera);
+
+// ---- UI ----
+const hud = document.getElementById('hud');
+const overlay = document.getElementById('overlay');
+const crosshair = document.getElementById('crosshair');
+const hitmarker = document.getElementById('hitmarker');
+const damageVignette = document.getElementById('damage');
+const deadMsg = document.getElementById('dead');
+const lockMsg = document.getElementById('lockmsg');
+const spreadRing = document.getElementById('spread');
+const feed = document.getElementById('feed');
+
+let fps = 60;
+let hitmarkerTimer = 0;
 
 // 1 = handgun, 2 = knife. F flips the knife.
 function setWeapon(w) {
@@ -55,6 +79,7 @@ function setWeapon(w) {
   weapon.model.visible = w === weapon;
   knife.model.visible = w === knife;
 }
+
 // P toggles quality: high = ambient occlusion and sharper pixels, low = fastest frames
 let quality = 'high';
 function setQuality(q) {
@@ -63,31 +88,13 @@ function setQuality(q) {
   postfx.gtao.enabled = q === 'high';
   postfx.resize(window.innerWidth, window.innerHeight);
 }
-document.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyP' && !e.repeat) setQuality(quality === 'high' ? 'low' : 'high');
-});
 
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Digit1') setWeapon(weapon);
   if (e.code === 'Digit2') setWeapon(knife);
   if (e.code === 'KeyF' && !e.repeat) knife.flip();
+  if (e.code === 'KeyP' && !e.repeat) setQuality(quality === 'high' ? 'low' : 'high');
 });
-const dust = createDust(scene);
-const postfx = createPostFx(renderer, scene, camera);
-
-const hud = document.getElementById('hud');
-const overlay = document.getElementById('overlay');
-const crosshair = document.getElementById('crosshair');
-const hitmarker = document.getElementById('hitmarker');
-const damageVignette = document.getElementById('damage');
-const deadMsg = document.getElementById('dead');
-
-let kills = 0;
-let fps = 60;
-let hitmarkerTimer = 0;
-
-const lockMsg = document.getElementById('lockmsg');
-const spreadRing = document.getElementById('spread');
 
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === document.body;
@@ -107,9 +114,8 @@ document.addEventListener('agilos:lockfailed', showLockFailed);
 document.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !player.locked) return;
   player.syncAim();
-  const r = active.fire(enemies, colliders);
+  const r = active.fire(world);
   if (r.hit) hitmarkerTimer = 0.15;
-  if (r.kill) kills++;
 });
 
 window.addEventListener('resize', () => {
@@ -119,20 +125,38 @@ window.addEventListener('resize', () => {
   postfx.resize(window.innerWidth, window.innerHeight);
 });
 
+// Kill feed, newest on top, each line fades after a few seconds
+world.onKill((killer, victim, how) => {
+  const line = document.createElement('div');
+  line.className = 'feed-line';
+  const k = killer ? killer.name : 'World';
+  const icon = how === 'headshot' ? '⌖ headshot' : how;
+  line.textContent = `${k}  [${icon}]  ${victim.name}`;
+  if (killer === player || victim === player) line.classList.add('mine');
+  feed.prepend(line);
+  while (feed.children.length > 6) feed.lastChild.remove();
+  setTimeout(() => line.classList.add('fade'), 4000);
+  setTimeout(() => line.remove(), 5000);
+});
+
 // Debug handle for automated testing
-window.agilos = { player, weapon, knife, setWeapon, enemies, renderer, scene, postfx, get kills() { return kills; } };
+window.agilos = {
+  player, weapon, knife, setWeapon, world, nav, bots, renderer, scene, postfx,
+  get kills() { return player.kills; },
+};
 
 let last = performance.now();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
   const t = now / 1000;
-  if (dt > 0) fps += (1 / dt - fps) * 0.05;
   last = now;
+  if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
   player.update(dt);
   weapon.update(dt);
   knife.update(dt);
-  enemies.update(dt, player);
+  bots.update(dt);
+  world.update(dt);
 
   sky.position.copy(camera.position);
   dust.update(t);
@@ -153,17 +177,17 @@ function frame(now) {
   hitmarker.style.opacity = String(hitmarkerTimer / 0.15);
   damageVignette.style.opacity = String(player.damageFlash / 0.35);
   deadMsg.style.display = player.dead ? 'flex' : 'none';
+  if (player.dead) {
+    deadMsg.textContent = player.lastAttacker ? `KILLED BY ${player.lastAttacker.name.toUpperCase()}` : 'YOU DIED';
+  }
 
   const v = player.velocity;
-  const p = player.position;
   const reloading = weapon.reloadTimer > 0;
   hud.textContent =
     `HP      ${Math.ceil(player.health)}\n` +
     `WEAPON  ${active === knife ? 'knife (F flip)' : `handgun  ${reloading ? 'RELOADING' : `${weapon.ammo}/${weapon.magSize}   reserve ${weapon.reserve}`}`}\n` +
-    `KILLS   ${kills}   mobs alive ${enemies.aliveCount()}\n` +
-    `speed   ${Math.hypot(v.x, v.z).toFixed(1)} m/s\n` +
-    `vert    ${v.y.toFixed(1)} m/s\n` +
-    `pos     ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}\n` +
+    `K/D     ${player.kills}/${player.deaths}   bots alive ${bots.aliveCount()}/${bots.list.length}\n` +
+    `speed   ${Math.hypot(v.x, v.z).toFixed(1)} m/s   height ${player.position.y.toFixed(1)} m\n` +
     `state   ${player.state}   double jump ${player.canDouble ? 'ready' : 'used'}\n` +
     `fps     ${fps.toFixed(0)}   quality ${quality} (P)`;
 

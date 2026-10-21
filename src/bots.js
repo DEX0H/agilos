@@ -1,0 +1,517 @@
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { Character, STAND_H } from './character.js';
+import { GunState, HANDGUN } from './gun.js';
+
+// Bots play like players: same Character movement (sprint, slide, double jump,
+// wall jump), same handgun with the same accuracy rules, and they fight everyone.
+// Only the input comes from AI instead of a keyboard. Network players will slot in
+// the same way later.
+
+const NAMES = ['Viper', 'Rook', 'Ghost', 'Nova', 'Hex', 'Blitz', 'Kestrel', 'Mako'];
+const COLORS = [0x6a2420, 0x24486a, 0x2f5a2a, 0x5a4a1e, 0x4a2a5a, 0x1f5a55, 0x5a2a3f, 0x3a3f46];
+
+// Perception and aim
+const SIGHT_RANGE = 38;
+const PERCEPTION_INTERVAL = 0.15;
+const FORGET_TIME = 3.5;          // seconds a target is chased after losing sight
+const REACTION_MIN = 0.3;         // seconds from first sight to first shot
+const REACTION_RAND = 0.3;
+const TURN_RATE = 8;              // radians per second the aim can swing
+const AIM_NOISE = 0.06;           // radians of aim wobble when a target is first seen
+const AIM_SETTLE = 1.5;           // seconds of tracking to reach best aim
+const MIN_NOISE = 0.15;           // fraction of the wobble that never goes away
+const FIRE_CONE = 0.07;           // fire when aim is within this of the target
+const SHOT_GAP_MIN = 0.1;         // extra human-ish delay between shots
+const SHOT_GAP_RAND = 0.25;
+const STOP_TO_SHOOT = 0.14;       // CS-style: stop moving briefly to shoot accurately
+
+// Movement
+const PREF_MIN = 6;               // preferred fighting distance
+const PREF_MAX = 15;
+const REPATH_INTERVAL = 0.8;
+const WAYPOINT_REACH = 0.7;
+const GOAL_TIME_MIN = 8;
+const GOAL_TIME_RAND = 6;
+const HUNT_CHANCE = 0.45;         // when wandering, chance to head for a known combatant
+const RESPAWN_TIME = 5;
+
+const _aim = new THREE.Vector3();
+const _to = new THREE.Vector3();
+const _muzzle = new THREE.Vector3();
+
+function angleDiff(a, b) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+function approach(cur, target, maxStep) {
+  const d = angleDiff(cur, target);
+  return cur + Math.max(-maxStep, Math.min(maxStep, d));
+}
+
+function makeNameTag(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'bold 34px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.strokeText(text, 128, 32);
+  ctx.fillStyle = '#ffe6c2';
+  ctx.fillText(text, 128, 32);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sprite.scale.set(1.2, 0.3, 1);
+  return sprite;
+}
+
+export class Bot extends Character {
+  constructor(scene, world, nav, spawn, index, spawnPoints) {
+    super(world.colliders, spawn, NAMES[index % NAMES.length]);
+    this.world = world;
+    this.nav = nav;
+    this.spawnPoints = spawnPoints;
+    this.respawnTime = RESPAWN_TIME;
+    this.gun = new GunState(HANDGUN, this, { infiniteReserve: true });
+    this.yaw = Math.random() * Math.PI * 2;
+
+    // Combat memory
+    this.target = null;
+    this.targetVisible = false;
+    this.timeSinceSeen = 0;
+    this.lastKnown = new THREE.Vector3();
+    this.reaction = 0;
+    this.trackTime = 0;
+    this.aimHead = false;
+    this.noiseYaw = 0;
+    this.noisePitch = 0;
+    this.noiseTimer = 0;
+    this.shotGap = 0;
+    this.stopTimer = 0;
+    this.perceptionTimer = Math.random() * PERCEPTION_INTERVAL;
+
+    // Navigation
+    this.path = [];
+    this.pathIndex = 0;
+    this.pathDest = new THREE.Vector3(1e9, 0, 0);
+    this.repathTimer = 0;
+    this.goal = null;
+    this.goalTimer = 0;
+
+    // Movement style
+    this.strafeDir = Math.random() < 0.5 ? -1 : 1;
+    this.strafeTimer = 0;
+    this.hopTimer = 1 + Math.random() * 2;
+    this.slideHold = 0;
+    this.crouchHold = 0;
+    this.stuckTimer = 0;
+
+    this.buildModel(scene, COLORS[index % COLORS.length]);
+  }
+
+  buildModel(scene, bodyColor) {
+    this.bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.6, metalness: 0.05 });
+    this.armorMat = new THREE.MeshStandardMaterial({ color: 0x2a2c31, roughness: 0.45, metalness: 0.4 });
+    this.skinMat = new THREE.MeshStandardMaterial({ color: 0x8c5e48, roughness: 0.7 });
+    this.flashMats = [this.bodyMat, this.armorMat, this.skinMat];
+    const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3, 0.8) });
+    const gunMat = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.4, metalness: 0.7 });
+
+    this.group = new THREE.Group();
+    this.body = new THREE.Group(); // squashes for crouch; name tag stays upright
+    this.group.add(this.body);
+    const add = (geom, mat, x, y, z, parent = this.body) => {
+      const m = new THREE.Mesh(geom, mat);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      parent.add(m);
+      return m;
+    };
+    const pivot = (x, y, z) => {
+      const p = new THREE.Group();
+      p.position.set(x, y, z);
+      this.body.add(p);
+      return p;
+    };
+
+    add(new RoundedBoxGeometry(0.5, 0.62, 0.3, 4, 0.12), this.bodyMat, 0, 1.18, 0);
+    add(new RoundedBoxGeometry(0.42, 0.38, 0.1, 3, 0.05), this.armorMat, 0, 1.24, 0.17);
+    add(new RoundedBoxGeometry(0.4, 0.22, 0.26, 3, 0.08), this.armorMat, 0, 0.82, 0);
+    const head = add(new THREE.SphereGeometry(0.17, 24, 16), this.skinMat, 0, 1.62, 0);
+    head.scale.set(1, 1.1, 1);
+    add(new RoundedBoxGeometry(0.4, 0.2, 0.38, 3, 0.07), this.armorMat, 0, 1.73, -0.01);
+    const eyeGeom = new THREE.SphereGeometry(0.028, 8, 6);
+    add(eyeGeom, eyeMat, -0.07, 1.62, 0.15).castShadow = false;
+    add(eyeGeom, eyeMat, 0.07, 1.62, 0.15).castShadow = false;
+
+    this.armL = pivot(-0.33, 1.42, 0);
+    this.armR = pivot(0.33, 1.42, 0);
+    add(new THREE.CapsuleGeometry(0.075, 0.42, 4, 10), this.bodyMat, 0, -0.285, 0, this.armL);
+    add(new THREE.CapsuleGeometry(0.075, 0.42, 4, 10), this.bodyMat, 0, -0.285, 0, this.armR);
+
+    // Handgun in the right hand, barrel along the arm
+    add(new RoundedBoxGeometry(0.05, 0.22, 0.08, 2, 0.015), gunMat, 0, -0.64, 0.04, this.armR);
+    this.muzzle = new THREE.Object3D();
+    this.muzzle.position.set(0, -0.77, 0.04);
+    this.armR.add(this.muzzle);
+    this.flash = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 6),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 4, 1.5) }),
+    );
+    this.flash.visible = false;
+    this.muzzle.add(this.flash);
+    this.flashTimer = 0;
+
+    this.legL = pivot(-0.13, 0.82, 0);
+    this.legR = pivot(0.13, 0.82, 0);
+    add(new THREE.CapsuleGeometry(0.09, 0.6, 4, 10), this.armorMat, 0, -0.39, 0, this.legL);
+    add(new THREE.CapsuleGeometry(0.09, 0.6, 4, 10), this.armorMat, 0, -0.39, 0, this.legR);
+
+    this.tag = makeNameTag(this.name);
+    this.tag.position.y = 2.15;
+    this.group.add(this.tag);
+
+    this.walkPhase = Math.random() * Math.PI * 2;
+    scene.add(this.group);
+  }
+
+  // Getting shot reveals the shooter
+  takeDamage(amount, attacker = null) {
+    const killed = super.takeDamage(amount, attacker);
+    if (!killed && attacker && attacker !== this) {
+      if (!this.target || !this.targetVisible) {
+        this.target = attacker;
+        this.lastKnown.copy(attacker.position);
+        this.timeSinceSeen = 0;
+      }
+    }
+    return killed;
+  }
+
+  respawn() {
+    this.spawn.copy(this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)]);
+    super.respawn();
+    this.gun.ammo = this.gun.magSize;
+    this.target = null;
+    this.path = [];
+    this.goal = null;
+  }
+
+  // ---------- Perception ----------
+  perceive() {
+    const eye = this.eye();
+    let best = null;
+    let bestD = SIGHT_RANGE;
+    for (const c of this.world.combatants) {
+      if (c === this || c.dead) continue;
+      const ce = c.eye();
+      const d = eye.distanceTo(ce);
+      if (d > bestD) continue;
+      const chest = c.position.clone();
+      chest.y += c.height * 0.6;
+      if (!this.world.lineOfSight(eye, ce) && !this.world.lineOfSight(eye, chest)) continue;
+      // Stay on the current target if it is still visible and not much farther
+      if (c === this.target) { best = c; bestD = d + 4; continue; }
+      best = c;
+      bestD = d;
+    }
+
+    if (best) {
+      if (best !== this.target || !this.targetVisible) {
+        this.reaction = REACTION_MIN + Math.random() * REACTION_RAND;
+        this.trackTime = 0;
+        this.aimHead = Math.random() < 0.3;
+      }
+      this.target = best;
+      this.targetVisible = true;
+      this.timeSinceSeen = 0;
+      this.lastKnown.copy(best.position);
+    } else {
+      this.targetVisible = false;
+    }
+  }
+
+  // ---------- Navigation ----------
+  // Direction (x, z) to walk toward `dest`, following the nav graph across levels
+  followPath(dest, dt) {
+    this.repathTimer -= dt;
+    if (this.repathTimer <= 0 || this.pathDest.distanceTo(dest) > 3) {
+      this.path = this.nav.findPath(this.position, dest);
+      this.pathIndex = 0;
+      this.repathTimer = REPATH_INTERVAL;
+      this.pathDest.copy(dest);
+    }
+
+    const p = this.position;
+    while (this.pathIndex < this.path.length) {
+      const wp = this.path[this.pathIndex];
+      const h = Math.hypot(wp.x - p.x, wp.z - p.z);
+      if (h < WAYPOINT_REACH && Math.abs(wp.y - p.y) < 1.2) this.pathIndex++;
+      else break;
+    }
+
+    let wp = this.path[this.pathIndex];
+    if (!wp) wp = dest;
+    if (p.y < wp.y - 1.5 && this.onGround) this.repathTimer = 0; // fell off the route
+
+    const dx = wp.x - p.x;
+    const dz = wp.z - p.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.3) return null;
+
+    // Long straight stretch ahead on the ground: sometimes slide, like a player would
+    if (len > 7 && this.onGround && this.slideHold <= 0 && Math.random() < 0.6 * dt) {
+      this.slideHold = 0.7;
+    }
+    return [dx / len, dz / len];
+  }
+
+  pickGoal() {
+    const others = this.world.combatants.filter((c) => c !== this && !c.dead);
+    if (others.length && Math.random() < HUNT_CHANCE) {
+      let near = others[0];
+      for (const c of others) {
+        if (c.position.distanceTo(this.position) < near.position.distanceTo(this.position)) near = c;
+      }
+      this.goal = near.position.clone();
+    } else {
+      this.goal = this.nav.randomNode().clone();
+    }
+    this.goalTimer = GOAL_TIME_MIN + Math.random() * GOAL_TIME_RAND;
+  }
+
+  // ---------- Main AI ----------
+  think(dt) {
+    this.perceptionTimer -= dt;
+    if (this.perceptionTimer <= 0) {
+      this.perceptionTimer = PERCEPTION_INTERVAL;
+      this.perceive();
+    }
+    if (this.target && this.target.dead) {
+      this.target = null;
+      this.targetVisible = false;
+    }
+    if (this.target && !this.targetVisible) {
+      this.timeSinceSeen += dt;
+      if (this.timeSinceSeen > FORGET_TIME) this.target = null;
+    }
+
+    const input = { forward: 0, strafe: 0, sprint: true, crouch: false, jump: false };
+    let move = null;
+    const t = this.target;
+
+    // --- Aim ---
+    let wantYaw = this.yaw;
+    let wantPitch = 0;
+    if (t && this.targetVisible) {
+      this.trackTime += dt;
+      this.reaction -= dt;
+      this.noiseTimer -= dt;
+      if (this.noiseTimer <= 0) {
+        this.noiseTimer = 0.25;
+        this.noiseYaw = Math.random() * 2 - 1;
+        this.noisePitch = Math.random() * 2 - 1;
+      }
+      const aimY = this.aimHead ? t.height - 0.2 : t.height * 0.6;
+      const e = this.eye();
+      _to.set(t.position.x - e.x, t.position.y + aimY - e.y, t.position.z - e.z);
+      const flat = Math.hypot(_to.x, _to.z);
+      const noise = AIM_NOISE * Math.max(MIN_NOISE, 1 - this.trackTime / AIM_SETTLE);
+      wantYaw = Math.atan2(-_to.x, -_to.z) + this.noiseYaw * noise;
+      wantPitch = Math.atan2(_to.y, flat) + this.noisePitch * noise;
+    } else if (t) {
+      const e = this.eye();
+      wantYaw = Math.atan2(-(this.lastKnown.x - e.x), -(this.lastKnown.z - e.z));
+    } else if (Math.hypot(this.velocity.x, this.velocity.z) > 1) {
+      wantYaw = Math.atan2(-this.velocity.x, -this.velocity.z);
+    }
+    this.yaw = approach(this.yaw, wantYaw, TURN_RATE * dt);
+    this.pitch += Math.max(-TURN_RATE * dt, Math.min(TURN_RATE * dt, wantPitch - this.pitch));
+
+    // --- Shoot ---
+    this.shotGap -= dt;
+    this.stopTimer -= dt;
+    if (t && this.targetVisible && this.reaction <= 0) {
+      this.aimDir(_aim);
+      const e = this.eye();
+      _to.set(t.position.x - e.x, t.position.y + t.height * 0.6 - e.y, t.position.z - e.z).normalize();
+      const err = Math.acos(Math.min(1, _aim.dot(_to)));
+      if (err < FIRE_CONE && this.shotGap <= 0 && this.gun.canFire()) {
+        const r = this.gun.fire(this.world, e, _aim);
+        if (r.fired) {
+          this.muzzle.getWorldPosition(_muzzle);
+          this.world.addTracer(_muzzle, r.end);
+          this.flashTimer = 0.05;
+          this.shotGap = SHOT_GAP_MIN + Math.random() * SHOT_GAP_RAND;
+          this.stopTimer = STOP_TO_SHOOT;
+        }
+      }
+      if (this.gun.ammo === 0) this.gun.reload();
+    } else if (!this.targetVisible && this.gun.ammo < this.gun.magSize / 2) {
+      this.gun.reload(); // reload while nobody is in sight
+    }
+
+    // --- Move ---
+    if (t && this.targetVisible) {
+      const dx = t.position.x - this.position.x;
+      const dz = t.position.z - this.position.z;
+      const d = Math.hypot(dx, dz) || 1;
+      const tx = dx / d;
+      const tz = dz / d;
+      const sameLevel = Math.abs(t.position.y - this.position.y) < 1.5;
+
+      if (d > PREF_MAX) {
+        move = sameLevel ? [tx, tz] : this.followPath(t.position, dt);
+      } else if (d < PREF_MIN) {
+        move = [-tx, -tz];
+      }
+
+      // Strafe side to side, flipping direction every so often
+      this.strafeTimer -= dt;
+      if (this.strafeTimer <= 0) {
+        this.strafeDir = Math.random() < 0.5 ? -1 : 1;
+        this.strafeTimer = 0.35 + Math.random() * 0.8;
+      }
+      const sx = -tz * this.strafeDir;
+      const sz = tx * this.strafeDir;
+      if (move) {
+        const mx = move[0] + sx * 0.7;
+        const mz = move[1] + sz * 0.7;
+        const ml = Math.hypot(mx, mz) || 1;
+        move = [mx / ml, mz / ml];
+      } else {
+        move = [sx, sz];
+      }
+      input.sprint = d > PREF_MAX;
+
+      // Stop briefly when shooting, then keep moving
+      if (this.stopTimer > 0) move = null;
+
+      // Jump around in fights, sometimes crouch
+      this.hopTimer -= dt;
+      if (this.hopTimer <= 0 && this.onGround) {
+        input.jump = true;
+        this.hopTimer = 1.2 + Math.random() * 2.5;
+      }
+      if (this.crouchHold <= 0 && Math.random() < 0.15 * dt) this.crouchHold = 0.5 + Math.random() * 0.6;
+    } else {
+      // Not fighting: chase the last known position, or roam toward a goal
+      let dest;
+      if (t) {
+        dest = this.lastKnown;
+      } else {
+        this.goalTimer -= dt;
+        if (!this.goal || this.goalTimer <= 0 ||
+            Math.hypot(this.goal.x - this.position.x, this.goal.z - this.position.z) < 1.5) {
+          this.pickGoal();
+        }
+        dest = this.goal;
+      }
+      move = this.followPath(dest, dt);
+
+      // Hop now and then while running around
+      this.hopTimer -= dt;
+      if (this.hopTimer <= 0 && this.onGround && this.slideHold <= 0) {
+        input.jump = true;
+        this.hopTimer = 2.5 + Math.random() * 3;
+      }
+    }
+
+    // Slide: hold crouch while sprinting, and often finish with a slide-jump
+    if (this.slideHold > 0) {
+      this.slideHold -= dt;
+      input.crouch = true;
+      input.sprint = true;
+      if (this.slideHold <= 0.08 && this.sliding && Math.random() < 0.5) input.jump = true;
+    }
+    if (this.crouchHold > 0) {
+      this.crouchHold -= dt;
+      input.crouch = true;
+      input.sprint = false;
+    }
+
+    // Kick off walls when one is touched mid-air
+    if (this.state === 'wall' && Math.random() < 3 * dt) input.jump = true;
+
+    // Stuck against something: hop over it, then give up on the route
+    const hs = Math.hypot(this.velocity.x, this.velocity.z);
+    if (move && hs < 0.8 && this.onGround) {
+      this.stuckTimer += dt;
+      if (this.stuckTimer > 0.5) input.jump = true;
+      if (this.stuckTimer > 1.6) {
+        this.stuckTimer = 0;
+        this.repathTimer = 0;
+        if (!t) this.goal = null;
+      }
+    } else {
+      this.stuckTimer = 0;
+    }
+
+    // World direction -> forward/strafe relative to where the bot is looking
+    if (move) {
+      const sin = Math.sin(this.yaw);
+      const cos = Math.cos(this.yaw);
+      input.forward = -sin * move[0] - cos * move[1];
+      input.strafe = cos * move[0] - sin * move[1];
+    }
+    return input;
+  }
+
+  update(dt) {
+    this.preUpdate(dt);
+    this.gun.update(dt);
+    if (this.tickDead(dt)) {
+      this.group.visible = false;
+      return;
+    }
+    this.group.visible = true;
+    const input = this.think(dt);
+    this.simulate(dt, input);
+    this.animate(dt);
+  }
+
+  animate(dt) {
+    this.group.position.copy(this.position);
+    this.group.rotation.y = this.yaw + Math.PI; // model faces +z, yaw 0 looks along -z
+    this.body.scale.y = this.height / STAND_H;
+    this.tag.position.y = this.height + 0.35;
+
+    const glow = Math.min(1, this.damageFlash / 0.35) * 0.6;
+    for (const m of this.flashMats) m.emissive.setRGB(glow, 0, 0);
+
+    const hs = Math.hypot(this.velocity.x, this.velocity.z);
+    const moving = this.onGround && !this.sliding ? Math.min(1, hs / 7) : 0;
+    this.walkPhase += dt * (3 + hs * 0.9);
+    const s = Math.sin(this.walkPhase) * moving * 0.55;
+    this.legL.rotation.x = s;
+    this.legR.rotation.x = -s;
+    this.armL.rotation.x = -s * 0.7;
+    // Gun arm points where the bot aims while it has a target
+    this.armR.rotation.x = this.target ? -Math.PI / 2 - this.pitch : s * 0.7;
+
+    this.flashTimer -= dt;
+    this.flash.visible = this.flashTimer > 0;
+  }
+}
+
+export class Bots {
+  constructor(scene, world, nav, spawnPoints) {
+    this.list = spawnPoints.map((s, i) => new Bot(scene, world, nav, s, i, spawnPoints));
+    for (const b of this.list) world.add(b);
+  }
+
+  update(dt) {
+    for (const b of this.list) b.update(dt);
+  }
+
+  aliveCount() {
+    return this.list.filter((b) => !b.dead).length;
+  }
+}

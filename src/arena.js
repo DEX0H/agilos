@@ -46,6 +46,11 @@ export function buildArena(scene) {
   const group = new THREE.Group();
   scene.add(group);
 
+  // Navigation points and explicit links (stairs) for bots
+  const navPoints = [];
+  const navLinks = [];
+  const nav = (x, y, z) => navPoints.push(new THREE.Vector3(x, y, z)) - 1;
+
   // Low golden sun from the shared direction
   const sun = new THREE.DirectionalLight(0xffe2b8, 2.2);
   sun.position.copy(SUN_DIR).multiplyScalar(60);
@@ -104,8 +109,31 @@ export function buildArena(scene) {
   // N runs +x from the west corner, E runs +z from the north corner,
   // S runs -x from the east corner, W runs -z from the south corner.
   const stairColor = new THREE.Color(0x6b7078);
+
+  // Point `along` metres from a side's start corner, `out` metres outside the footprint
+  function sidePoint(b, side, along, out) {
+    if (side === 'N') return [b.x0 + along, b.z0 - out];
+    if (side === 'E') return [b.x1 + out, b.z0 + along];
+    if (side === 'S') return [b.x1 - along, b.z1 + out];
+    return [b.x0 - out, b.z1 - along];
+  }
+
   function stairs(b, side, baseY) {
     const steps = Math.round(STORY / STEP_RISE);
+
+    // Bot nav: inside at the bottom -> first step -> top step -> inside at the top
+    const first = STAIR_INSET + STEP_RUN / 2;
+    const last = STAIR_INSET + STEP_RUN * (steps - 1) + STEP_RUN / 2;
+    const [ax, az] = sidePoint(b, side, first, -0.7);
+    const [bx, bz] = sidePoint(b, side, first, STAIR_W / 2);
+    const [cx2, cz2] = sidePoint(b, side, last, STAIR_W / 2);
+    const [dx, dz] = sidePoint(b, side, last, -0.7);
+    const A = nav(ax, baseY, az);
+    const B = nav(bx, baseY + STEP_RISE, bz);
+    const C = nav(cx2, baseY + STORY, cz2);
+    const D = nav(dx, baseY + STORY, dz);
+    navLinks.push([A, B], [B, C], [C, D]);
+
     for (let k = 0; k < steps; k++) {
       const top = baseY + STEP_RISE * (k + 1);
       const along = STAIR_INSET + STEP_RUN * k + STEP_RUN / 2;
@@ -158,7 +186,11 @@ export function buildArena(scene) {
 
     for (let i = 0; i < stories; i++) stairs(b, stairSides[i], i * STORY);
 
-    block(cx + w * 0.15, cz - d * 0.15, 2, 1, roof + 1.0, { bottomY: roof, kind: 'wood', color: crateColor });
+    // Nav point at the centre of every floor, including the ground floor and the roof
+    for (let i = 0; i <= stories; i++) nav(cx, i * STORY, cz);
+
+    // Roof cover kept off the centre lines so bots can cross the roof
+    block(cx + w * 0.25, cz - d * 0.25, 2, 1, roof + 1.0, { bottomY: roof, kind: 'wood', color: crateColor });
     return b;
   }
 
@@ -209,6 +241,21 @@ export function buildArena(scene) {
     block(x, z, 1.4, 1.4, 1.0, { kind: 'wood', color: crateColor });
   }
 
+  // Ground grid of nav points wherever a body fits
+  for (let x = -27.5; x <= 27.5; x += 5) {
+    for (let z = -27.5; z <= 27.5; z += 5) {
+      let free = true;
+      for (const c of colliders) {
+        if (c.min.x < x + 0.45 && c.max.x > x - 0.45 && c.min.z < z + 0.45 && c.max.z > z - 0.45 &&
+            c.min.y < 1.8 && c.max.y > 0.05) {
+          free = false;
+          break;
+        }
+      }
+      if (free) nav(x, 0, z);
+    }
+  }
+
   const playerSpawn = new THREE.Vector3(0, 0, 26);
   const mobSpawns = [
     // Streets
@@ -223,5 +270,5 @@ export function buildArena(scene) {
     new THREE.Vector3(17.5, 6, 17.5),    // SE 2F
   ];
 
-  return { colliders, group, playerSpawn, mobSpawns };
+  return { colliders, group, playerSpawn, mobSpawns, navPoints, navLinks };
 }
