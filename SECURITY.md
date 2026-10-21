@@ -164,6 +164,26 @@ the match state, and clients should only send inputs. The design is in
 | 4 | Two-factor authentication on the owner's GitHub account. | Open: the owner turns it on in GitHub's account settings |
 | 5 | Authoritative server for multiplayer: never trust client reports of hits, damage or position. | Designed in [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md), to follow when multiplayer is built |
 
+## Windows app
+
+The Windows app (`electron/`) adds a desktop attack surface, hardened as follows:
+
+- **Renderer locked down:** `sandbox`, `contextIsolation`, no `nodeIntegration`. The page
+  gets only a 3-function bridge (`electron/preload.cjs`): version, the update setting, an
+  update notice.
+- **Local files only:** the game loads from a private `app://agilos/` protocol that serves
+  files from inside the app's `dist/` folder and refuses paths outside it. The page's
+  Content-Security-Policy still applies.
+- **No navigation:** the window can't navigate away from the game; links open in the
+  default browser, and only `https://` ones.
+- **Permissions:** only pointer lock and fullscreen are granted; everything else
+  (camera, microphone, notifications) is refused.
+- **Updates:** electron-updater downloads only from this repository's GitHub Releases over
+  HTTPS and checks the file's SHA-512 from `latest.yml`. Once releases are signed, the
+  updater also checks the publisher signature.
+- **Releases:** built only by the release workflow from a tag; actions pinned to commit
+  SHAs; the workflow token can write releases and nothing else. See [SIGNING.md](SIGNING.md).
+
 ## How to report a vulnerability
 
 Please open a private security advisory on the repository
