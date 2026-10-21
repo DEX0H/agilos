@@ -72,6 +72,10 @@ npm run dev     # http://localhost:5173 (adds a window.agilos debug handle)
 npm run build   # production build in dist/
 ```
 
+Sign-in and cloud stats need the Firebase web settings, which are not in the repository:
+copy `.env.example` to `.env.local` and fill it in. Without it the game runs in guest
+mode. CI reads them from the repository secrets `FIREBASE_API_KEY` and `FIREBASE_APP_ID`.
+
 Pushing to `main` builds and deploys to GitHub Pages through GitHub Actions.
 
 ### Windows app
