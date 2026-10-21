@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agilos</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
+      canvas { display: block; }
+      #crosshair {
+        position: fixed; left: 50%; top: 50%; width: 6px; height: 6px;
+        margin: -3px 0 0 -3px; border-radius: 50%;
+        background: rgba(255,255,255,0.9); box-shadow: 0 0 2px #000; pointer-events: none;
+      }
+      #hud {
+        position: fixed; left: 12px; top: 12px; color: #fff; font: 13px/1.4 ui-monospace, monospace;
+        text-shadow: 0 1px 2px #000; pointer-events: none; white-space: pre;
+      }
+      #overlay {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.55); color: #fff; text-align: center; pointer-events: none;
+      }
+      #overlay h1 { margin: 0 0 12px; font-size: 32px; }
+      #overlay p { margin: 4px 0; opacity: 0.85; }
+    </style>
+  </head>
+  <body>
+    <div id="crosshair"></div>
+    <div id="hud"></div>
+    <div id="overlay">
+      <div>
+        <h1>Agilos — Movement Test</h1>
+        <p>Click to play</p>
+        <p>WASD move · Mouse look · Space jump (press again in air to double jump) · Shift sprint · Esc release mouse</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
