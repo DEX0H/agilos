@@ -23,6 +23,11 @@ const UP = new THREE.Vector3(0, 1, 0);
 const BEAM_HEIGHT = 26;
 const BEAM_READY = new THREE.Color(0.2, 0.65, 1.0);
 const BEAM_USED = new THREE.Color(0.6, 0.16, 0.12);
+const BULBS = 28;                   // casino marquee bulbs around the lid edge
+const RARITY = Object.fromEntries(Object.entries(RARITY_COLORS).map(([k, c]) => [k, new THREE.Color(c)]));
+const BULB_IDLE = new THREE.Color(1.0, 0.72, 0.35);
+const _c = new THREE.Color();
+const _m = new THREE.Matrix4();
 
 const _v = new THREE.Vector3();
 const _box = new THREE.Box3();
@@ -105,7 +110,7 @@ class MysteryBox {
     }
     // Glowing "?" panels on both long sides
     for (const side of [1, -1]) {
-      const panel = new THREE.Mesh(new THREE.PlaneGeometry(LEN * 0.82, HGT * 0.62), a.panel);
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(LEN * 0.82, HGT * 0.62), this.panelMat ||= a.panel.clone());
       panel.position.set(0, HGT / 2, side * (DEP / 2 + 0.018));
       if (side < 0) panel.rotation.y = Math.PI;
       this.group.add(panel);
@@ -131,7 +136,26 @@ class MysteryBox {
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.45, BEAM_HEIGHT, 16, 1, true), this.beamMat);
     this.beam = beam;
     this.group.add(beam);
-    this.light = new THREE.PointLight(0x7fe3ff, 3, 6, 1.6);
+    // Marquee bulbs around the top edge of the box, one instanced mesh, colours per bulb
+    this.bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.022, 8, 6), new THREE.MeshBasicMaterial(), BULBS);
+    const perim = 2 * (LEN + DEP);
+    for (let i = 0; i < BULBS; i++) {
+      let d = (i / BULBS) * perim;
+      let x;
+      let z;
+      const hl = LEN / 2 + 0.03;
+      const hd = DEP / 2 + 0.03;
+      if (d < LEN) { x = -hl + d * (2 * hl / LEN); z = hd; }
+      else if ((d -= LEN) < DEP) { x = hl; z = hd - d * (2 * hd / DEP); }
+      else if ((d -= DEP) < LEN) { x = hl - d * (2 * hl / LEN); z = -hd; }
+      else { d -= LEN; x = -hl; z = -hd + d * (2 * hd / DEP); }
+      _m.makeTranslation(x, HGT - 0.035, z);
+      this.bulbs.setMatrixAt(i, _m);
+      this.bulbs.setColorAt(i, BULB_IDLE);
+    }
+    this.group.add(this.bulbs);
+
+    this.light = new THREE.PointLight(0x7fe3ff, 1.5, 6, 1.6);
     this.light.position.set(0, HGT + 0.6, 0.2);
     this.group.add(this.light);
 
@@ -247,19 +271,59 @@ class MysteryBox {
     this.hinge.rotation.x = -1.9 * this.open;
     this.display.rotation.y = t * 2.2;
 
-    // Beam: bright and pulsing when ready, dim red while recharging, white flash on a roll
-    const ready = this.state === 'ready';
-    const target = ready ? BEAM_READY : this.state === 'cooldown' ? BEAM_USED : BEAM_READY;
-    this.beamMat.color.lerp(target, Math.min(1, dt * 4));
-    const pulse = ready ? 0.85 + 0.15 * Math.sin(t * 3 + this.group.position.x) : this.state === 'cooldown' ? 0.35 : 1.4;
+    this.updateLights(dt, t, eye);
+  }
+
+  // Casino look: while spinning, the beam, light, bulbs and "?" panels flash the rarity
+  // colour of whichever weapon is showing; on landing they settle on the result's colour.
+  updateLights(dt, t, eye) {
+    const st = this.state;
+    const rarity = this.shown && this.shown.rarity ? RARITY[this.shown.rarity] : null;
+    let beamCol = BEAM_READY;
+    let beamPulse = 0.85 + 0.15 * Math.sin(t * 3 + this.group.position.x);
+    if (st === 'cooldown') { beamCol = BEAM_USED; beamPulse = 0.35; }
+    if ((st === 'spinning' || st === 'showing') && rarity) {
+      beamCol = rarity;
+      beamPulse = st === 'showing' ? 0.75 + 0.25 * Math.sin(this.timer * 14) : 0.6;
+    }
+    this.beamMat.color.lerp(_c.copy(beamCol).multiplyScalar(0.7), Math.min(1, dt * (st === 'spinning' ? 25 : 5)));
     // Fade the beam up close so it doesn't blind whoever is using the box
     const near = eye ? Math.hypot(eye.x - this.group.position.x, eye.z - this.group.position.z) : 99;
-    const fade = 0.12 + 0.88 * THREE.MathUtils.smoothstep(near, 2.5, 12);
-    this.beamMat.opacity = pulse * fade;
-    const rarity = this.shown && this.shown.rarity ? RARITY_COLORS[this.shown.rarity] : null;
-    if (rarity && this.state === 'showing') this.light.color.set(rarity);
+    const fade = 0.08 + 0.92 * THREE.MathUtils.smoothstep(near, 2.5, 12);
+    this.beamMat.opacity = beamPulse * fade;
+
+    // Point light: soft, tinted by rarity while open
+    if (rarity && st !== 'ready' && st !== 'cooldown') this.light.color.copy(rarity);
     else this.light.color.setRGB(0.5, 0.9, 1);
-    this.light.intensity = this.state === 'cooldown' ? 0.6 : 2.5 + this.open * 4;
+    this.light.intensity = st === 'cooldown' ? 0.4 : 1.2 + this.open * 1.3;
+
+    // "?" panels glow in the rarity colour during a roll
+    const pe = this.panelMat.emissive;
+    if (rarity && (st === 'spinning' || st === 'showing')) pe.lerp(rarity, Math.min(1, dt * 20));
+    else pe.lerp(st === 'cooldown' ? BEAM_USED : _c.setRGB(1, 1, 1), Math.min(1, dt * 5));
+    this.panelMat.emissiveIntensity = st === 'cooldown' ? 0.5 : 1.2;
+
+    // Bulbs: lazy twinkle when ready, a fast chase in rarity colours while spinning,
+    // all flashing the result's colour when it lands, dark while recharging
+    const chase = Math.floor(t * 22);
+    for (let i = 0; i < BULBS; i++) {
+      let k;
+      if (st === 'spinning' && rarity) {
+        k = (i + chase) % 4 === 0 ? 1.6 : 0.15;
+        _c.copy(rarity);
+      } else if (st === 'showing' && rarity) {
+        k = Math.floor(this.timer * 8) % 2 === 0 ? 1.6 : 0.35;
+        _c.copy(rarity);
+      } else if (st === 'cooldown') {
+        k = 0.12;
+        _c.copy(BEAM_USED);
+      } else {
+        k = 0.45 + 0.4 * Math.max(0, Math.sin(t * 2.5 - i * 0.7));
+        _c.copy(BULB_IDLE);
+      }
+      this.bulbs.setColorAt(i, _c.multiplyScalar(k));
+    }
+    this.bulbs.instanceColor.needsUpdate = true;
   }
 
   // Seconds left before it can be used again (0 when ready)
