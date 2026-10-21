@@ -87,6 +87,21 @@
         position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s;
         box-shadow: inset 0 0 90px rgba(90,170,255,0.45);
       }
+      #hpwrap {
+        position: fixed; left: 18px; bottom: 18px; display: flex; align-items: center; gap: 10px;
+        pointer-events: none;
+      }
+      #hpbar {
+        position: relative; width: 260px; height: 16px; background: rgba(0,0,0,0.55);
+        border: 1px solid rgba(255,255,255,0.25); border-radius: 3px; overflow: hidden;
+        transform: skewX(-12deg);
+      }
+      #hpfill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: #5fd35a; transition: width 0.12s; }
+      #hpshield {
+        position: absolute; inset: 0; background: linear-gradient(90deg, rgba(90,170,255,0.55), rgba(150,210,255,0.35));
+        opacity: 0; transition: opacity 0.3s;
+      }
+      #hpnum { color: #fff; font: 800 20px/1 system-ui, sans-serif; text-shadow: 0 1px 3px #000; min-width: 44px; }
       #toast {
         position: fixed; left: 50%; top: 62%; transform: translateX(-50%); pointer-events: none;
         color: #fff; font: 700 16px system-ui, sans-serif; text-shadow: 0 1px 3px #000; opacity: 0;
@@ -101,6 +116,10 @@
     <div id="dead">YOU DIED</div>
     <div id="banner"></div>
     <div id="shieldtint"></div>
+    <div id="hpwrap">
+      <div id="hpbar"><div id="hpfill"></div><div id="hpshield"></div></div>
+      <div id="hpnum"></div>
+    </div>
     <div id="toast"></div>
     <div id="hud"></div>
     <div id="feed"></div>

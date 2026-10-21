@@ -19,7 +19,7 @@ const GROUND_ACCEL = 60;
 const AIR_ACCEL = 8;
 const STEP_HEIGHT = 0.55;       // auto step-up height
 const PHYSICS_STEP = 1 / 120;
-const MAX_HEALTH = 150;
+const MAX_HEALTH = 200;
 export const SPAWN_SHIELD = 10;  // seconds of invulnerability after spawning
 const REGEN_DELAY = 4;           // seconds without taking damage before health regenerates
 const REGEN_RATE = 8;            // health per second
@@ -87,6 +87,7 @@ export class Character {
     this.canRespawn = true;   // off during a battle royale match
     this.shieldTimer = SPAWN_SHIELD;
     this.sinceDamage = 0;
+    this.hitStrength = 0;
   }
 
   get shielded() {
@@ -123,6 +124,7 @@ export class Character {
     if (this.shielded && !bypassShield) return false;
     this.health = Math.max(0, this.health - amount);
     this.damageFlash = 0.35;
+    this.hitStrength = Math.min(1, amount / 60); // a headshot (62.5) is a full-strength hit
     this.lastAttacker = attacker;
     this.sinceDamage = 0;
     if (this.health <= 0) {

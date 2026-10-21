@@ -127,6 +127,10 @@ export class Bot extends Character {
     this.armorMat = new THREE.MeshStandardMaterial({ color: 0x2a2c31, roughness: 0.45, metalness: 0.4 });
     this.skinMat = new THREE.MeshStandardMaterial({ color: 0x8c5e48, roughness: 0.7 });
     this.flashMats = [this.bodyMat, this.armorMat, this.skinMat];
+    // Healthy colours, and the colours they shift toward as health drops
+    this.healthyColors = this.flashMats.map((m) => m.color.clone());
+    this.hurtColors = [new THREE.Color(0xb3120c), new THREE.Color(0x5a0c0a), new THREE.Color(0x9c2a1c)];
+    this.shownHurt = -1;
     const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3, 0.8) });
     const gunMat = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.4, metalness: 0.7 });
 
@@ -183,6 +187,17 @@ export class Bot extends Character {
     this.tag = makeNameTag(this.name);
     this.tag.position.y = 2.15;
     this.group.add(this.tag);
+
+    // Health bar under the name tag, redrawn only when the value changes
+    this.barCanvas = document.createElement('canvas');
+    this.barCanvas.width = 128;
+    this.barCanvas.height = 16;
+    this.barTex = new THREE.CanvasTexture(this.barCanvas);
+    this.barTex.colorSpace = THREE.SRGBColorSpace;
+    this.bar = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.barTex, transparent: true, depthWrite: false }));
+    this.bar.scale.set(0.9, 0.11, 1);
+    this.group.add(this.bar);
+    this.shownHealth = -1;
 
     // Spawn shield bubble
     this.bubble = new THREE.Mesh(
@@ -545,6 +560,22 @@ export class Bot extends Character {
     return input;
   }
 
+  drawHealthBar() {
+    const hp = Math.ceil(this.health);
+    if (hp === this.shownHealth) return;
+    this.shownHealth = hp;
+    const ctx = this.barCanvas.getContext('2d');
+    const w = this.barCanvas.width;
+    const h = this.barCanvas.height;
+    const f = Math.max(0, Math.min(1, this.health / this.maxHealth));
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = f > 0.6 ? '#5fd35a' : f > 0.3 ? '#e6c33a' : '#e2452f';
+    ctx.fillRect(2, 2, (w - 4) * f, h - 4);
+    this.barTex.needsUpdate = true;
+  }
+
   update(dt) {
     this.preUpdate(dt);
     this.gun.update(dt);
@@ -565,10 +596,21 @@ export class Bot extends Character {
     this.group.position.copy(this.position);
     this.group.rotation.y = this.yaw + Math.PI; // model faces +z, yaw 0 looks along -z
     this.body.scale.y = this.height / STAND_H;
-    this.tag.position.y = this.height + 0.35;
+    this.tag.position.y = this.height + 0.38;
+    this.bar.position.y = this.height + 0.2;
 
-    const glow = Math.min(1, this.damageFlash / 0.35) * 0.6;
-    for (const m of this.flashMats) m.emissive.setRGB(glow, 0, 0);
+    // Skin colour follows damage taken: healthy colours -> deep red as health drops
+    const hurt = 1 - this.health / this.maxHealth;
+    if (Math.abs(hurt - this.shownHurt) > 0.005) {
+      this.shownHurt = hurt;
+      const k = Math.pow(hurt, 0.8);
+      this.flashMats.forEach((m, i) => m.color.copy(this.healthyColors[i]).lerp(this.hurtColors[i], k));
+    }
+    // Each hit flashes in proportion to its damage (a headshot flashes hardest)
+    const flash = Math.min(1, this.damageFlash / 0.35) * (0.25 + this.hitStrength * 1.1);
+    for (const m of this.flashMats) m.emissive.setRGB(flash, flash * 0.15, 0);
+
+    this.drawHealthBar();
 
     const hs = Math.hypot(this.velocity.x, this.velocity.z);
     const moving = this.onGround && !this.sliding ? Math.min(1, hs / 7) : 0;

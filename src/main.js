@@ -78,6 +78,9 @@ const feed = document.getElementById('feed');
 const banner = document.getElementById('banner');
 const shieldTint = document.getElementById('shieldtint');
 const toast = document.getElementById('toast');
+const hpFill = document.getElementById('hpfill');
+const hpShield = document.getElementById('hpshield');
+const hpNum = document.getElementById('hpnum');
 buildControlsPanel(document.getElementById('settings'), document.getElementById('controlstext'));
 
 let toastTimer = 0;
@@ -206,6 +209,13 @@ function frame(now) {
   toastTimer = Math.max(0, toastTimer - dt);
   toast.style.opacity = String(Math.min(1, toastTimer * 2));
   shieldTint.style.opacity = player.shielded && !player.dead ? '1' : '0';
+
+  // Health bar: green > 60%, yellow > 30%, red below; blue overlay while the spawn shield is up
+  const hpFrac = Math.max(0, player.health / player.maxHealth);
+  hpFill.style.width = `${hpFrac * 100}%`;
+  hpFill.style.background = hpFrac > 0.6 ? '#5fd35a' : hpFrac > 0.3 ? '#e6c33a' : '#e2452f';
+  hpShield.style.opacity = player.shielded && !player.dead ? '1' : '0';
+  hpNum.textContent = String(Math.ceil(player.health));
 
   hitmarkerTimer = Math.max(0, hitmarkerTimer - dt);
   hitmarker.style.opacity = String(hitmarkerTimer / 0.15);
