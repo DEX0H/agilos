@@ -9,7 +9,7 @@ const START_DPS = 2;            // zone damage per second before the first close
 const MAP_HALF = 26;            // zone centres stay inside this square
 // Each phase: wait, then shrink to `radius` over `shrink` seconds; after that, `dps` outside
 const PHASES = [
-  { wait: 25, shrink: 20, radius: 26, dps: 4 },
+  { wait: 15, shrink: 20, radius: 26, dps: 4 },
   { wait: 15, shrink: 15, radius: 15, dps: 7 },
   { wait: 12, shrink: 12, radius: 7, dps: 12 },
   { wait: 8, shrink: 15, radius: 0, dps: 20 },

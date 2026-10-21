@@ -15,15 +15,17 @@ const COLORS = [0x6a2420, 0x24486a, 0x2f5a2a, 0x5a4a1e, 0x4a2a5a, 0x1f5a55, 0x5a
 const SIGHT_RANGE = 38;
 const PERCEPTION_INTERVAL = 0.15;
 const FORGET_TIME = 3.5;          // seconds a target is chased after losing sight
-const REACTION_MIN = 0.3;         // seconds from first sight to first shot
-const REACTION_RAND = 0.3;
-const TURN_RATE = 8;              // radians per second the aim can swing
-const AIM_NOISE = 0.06;           // radians of aim wobble when a target is first seen
-const AIM_SETTLE = 1.5;           // seconds of tracking to reach best aim
-const MIN_NOISE = 0.15;           // fraction of the wobble that never goes away
-const FIRE_CONE = 0.07;           // fire when aim is within this of the target
-const SHOT_GAP_MIN = 0.1;         // extra human-ish delay between shots
-const SHOT_GAP_RAND = 0.25;
+const ENGAGE_RANGE = 30;          // only start fights inside this distance
+const REACTION_MIN = 0.45;        // seconds from first sight to first shot
+const REACTION_RAND = 0.4;
+const TURN_RATE = 6;              // radians per second the aim can swing
+const AIM_NOISE = 0.09;           // radians of aim wobble when a target is first seen
+const AIM_SETTLE = 2.5;           // seconds of tracking to reach best aim
+const MIN_NOISE = 0.35;           // fraction of the wobble that never goes away
+const HEAD_AIM_CHANCE = 0.15;     // chance per engagement to go for the head
+const FIRE_CONE = 0.09;           // fire when aim is within this of the target
+const SHOT_GAP_MIN = 0.15;        // extra human-ish delay between shots
+const SHOT_GAP_RAND = 0.3;
 const STOP_TO_SHOOT = 0.14;       // CS-style: stop moving briefly to shoot accurately
 
 // Movement
@@ -231,7 +233,8 @@ export class Bot extends Character {
   perceive() {
     const eye = this.eye();
     let best = null;
-    let bestD = SIGHT_RANGE;
+    // Keep tracking a current target out to full sight range; new fights start closer
+    let bestD = this.target ? SIGHT_RANGE : ENGAGE_RANGE;
     for (const c of this.world.combatants) {
       if (c === this || c.dead || c.shielded) continue; // no point shooting a spawn shield
       const ce = c.eye();
@@ -250,7 +253,7 @@ export class Bot extends Character {
       if (best !== this.target || !this.targetVisible) {
         this.reaction = REACTION_MIN + Math.random() * REACTION_RAND;
         this.trackTime = 0;
-        this.aimHead = Math.random() < 0.3;
+        this.aimHead = Math.random() < HEAD_AIM_CHANCE;
       }
       this.target = best;
       this.targetVisible = true;

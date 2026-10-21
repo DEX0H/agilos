@@ -19,8 +19,10 @@ const GROUND_ACCEL = 60;
 const AIR_ACCEL = 8;
 const STEP_HEIGHT = 0.55;       // auto step-up height
 const PHYSICS_STEP = 1 / 120;
-const MAX_HEALTH = 100;
+const MAX_HEALTH = 150;
 export const SPAWN_SHIELD = 10;  // seconds of invulnerability after spawning
+const REGEN_DELAY = 4;           // seconds without taking damage before health regenerates
+const REGEN_RATE = 8;            // health per second
 
 // Slide (sprint + crouch on the ground)
 const SLIDE_MIN_SPEED = 6.5;
@@ -84,6 +86,7 @@ export class Character {
     this.frozen = false;      // no movement input (match countdown)
     this.canRespawn = true;   // off during a battle royale match
     this.shieldTimer = SPAWN_SHIELD;
+    this.sinceDamage = 0;
   }
 
   get shielded() {
@@ -121,6 +124,7 @@ export class Character {
     this.health = Math.max(0, this.health - amount);
     this.damageFlash = 0.35;
     this.lastAttacker = attacker;
+    this.sinceDamage = 0;
     if (this.health <= 0) {
       this.dead = true;
       this.respawnTimer = this.respawnTime;
@@ -151,6 +155,11 @@ export class Character {
     this.damageFlash = Math.max(0, this.damageFlash - dt);
     // The shield only counts down while you can actually move
     if (!this.frozen && !this.dead) this.shieldTimer = Math.max(0, this.shieldTimer - dt);
+    // Out of combat for a few seconds: health comes back
+    this.sinceDamage += dt;
+    if (!this.dead && this.sinceDamage > REGEN_DELAY && this.health < this.maxHealth) {
+      this.health = Math.min(this.maxHealth, this.health + REGEN_RATE * dt);
+    }
   }
 
   // Counts down the respawn while dead. Returns true while still dead.

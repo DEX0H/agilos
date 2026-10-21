@@ -130,6 +130,8 @@ const TABLES = { qwerty: QWERTY, qwertz: QWERTZ, azerty: AZERTY };
 export function keyLabel(code) {
   if (!code) return '—';
   if (NAMED[code]) return NAMED[code];
+  // Number row: show the number (on AZERTY the unshifted character is &, é, " ...)
+  if (code.startsWith('Digit')) return code.slice(5);
   const layout = activeLayout();
   if (layoutMap && settings.layout === 'auto') {
     const v = layoutMap.get(code);
