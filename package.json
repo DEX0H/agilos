@@ -16,7 +16,7 @@
     "electron": "^45.0.0",
     "electron-builder": "^26.15.3",
     "firebase": "^12.19.0",
-    "three": "^0.170.0",
+    "three": "^0.186.1",
     "vite": "^6.4.5"
   },
   "description": "Fast, vertical movement shooter: battle royale against bots, in the browser or on Windows.",
