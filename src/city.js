@@ -56,10 +56,10 @@ export async function dressCity(scene, arena) {
   // ---- Perimeter: a row of different buildings along each wall ----
   const rand = rng(1234);
   const STYLES = [
-    { ground: 'Metal_FirstFloor_Window', upper: ['Brick_Window_Square_Single', 'Brick_Window_Square_Single', 'Brick_Plain'], top: 'Cornice_Metal_Center', rows: 5 },
-    { ground: 'Trim_FirstFloor_Window', upper: ['Trim_Window', 'Trim_Window', 'Trim_Plain'], top: 'Cornice_Metal_Center', rows: 4 },
-    { ground: 'Metal_FirstFloor_Window', upper: ['Metal_FullWindow', 'Brick_Plain'], top: 'Cornice_Brick_Center', rows: 5 },
-    { ground: 'Trim_FirstFloor_Window', upper: ['Brick_Window_Square_Single', 'Brick_Plain', 'Brick_Window_Square_Single'], top: 'Cornice_Brick_Center', rows: 3 },
+    { ground: 'Metal_FirstFloor_Window', upper: ['Brick_Window_Square_Single'], top: 'Cornice_Metal_Center', rows: 5 },
+    { ground: 'Trim_FirstFloor_Window', upper: ['Trim_Window'], top: 'Cornice_Metal_Center', rows: 4 },
+    { ground: 'Metal_FirstFloor_Window', upper: ['Metal_FullWindow', 'Brick_Window_Square_Single'], top: 'Cornice_Brick_Center', rows: 5 },
+    { ground: 'Trim_FirstFloor_Window', upper: ['Brick_Window_Square_Single', 'Trim_Window'], top: 'Cornice_Metal_Center', rows: 3 },
   ];
   const chimneys = arena.chimneys || [];
   for (const f of arena.perimeterFaces) {
@@ -78,7 +78,7 @@ export async function dressCity(scene, arena) {
         const z = f.z + tz * along + f.nz * 0.04;
         for (let r = 0; r < style.rows; r++) {
           let name = r === 0 ? style.ground : style.upper[(k + r) % style.upper.length];
-          if (!has(name)) name = 'Brick_Plain';
+          if (!has(name)) name = 'Brick_Window_Square_Single';
           place(name, moduleMatrix(x, r * MODULE_H, z, f.nx, f.nz));
           // Some windows get an AC unit, away from the wall-jump chimneys
           const nearChimney = chimneys.some((c) => Math.hypot(c.x - x, c.z - z) < 5);
@@ -101,7 +101,7 @@ export async function dressCity(scene, arena) {
     const tz = -w.nx;
     for (let i = 0; i < k; i++) {
       const along = -w.length / 2 + (i + 0.5) * MODULE_W * sx;
-      const name = w.ground ? 'Metal_FirstFloor_Window' : (i % 2 ? 'Brick_Plain' : 'Brick_Window_Square_Single');
+      const name = w.ground ? 'Metal_FirstFloor_Window' : 'Brick_Window_Square_Single';
       // Front face slightly proud of the box so it covers it; the box itself is hidden
       place(name, moduleMatrix(w.x + tx * along + w.nx * 0.04, w.bottomY, w.z + tz * along + w.nz * 0.04, w.nx, w.nz, sx, sy));
     }
