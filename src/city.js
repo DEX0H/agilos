@@ -73,8 +73,9 @@ export async function dressCity(scene, arena) {
       const style = STYLES[Math.floor(rand() * STYLES.length)];
       for (let k = 0; k < width; k++, i++) {
         const along = -f.length / 2 + MODULE_W / 2 + i * MODULE_W;
-        const x = f.x + tx * along;
-        const z = f.z + tz * along;
+        // A few centimetres off the wall so the facade never z-fights with it
+        const x = f.x + tx * along + f.nx * 0.04;
+        const z = f.z + tz * along + f.nz * 0.04;
         for (let r = 0; r < style.rows; r++) {
           let name = r === 0 ? style.ground : style.upper[(k + r) % style.upper.length];
           if (!has(name)) name = 'Brick_Plain';
@@ -102,7 +103,7 @@ export async function dressCity(scene, arena) {
       const along = -w.length / 2 + (i + 0.5) * MODULE_W * sx;
       const name = w.ground ? 'Metal_FirstFloor_Window' : (i % 2 ? 'Brick_Plain' : 'Brick_Window_Square_Single');
       // Front face slightly proud of the box so it covers it; the box itself is hidden
-      place(name, moduleMatrix(w.x + tx * along + w.nx * 0.01, w.bottomY, w.z + tz * along + w.nz * 0.01, w.nx, w.nz, sx, sy));
+      place(name, moduleMatrix(w.x + tx * along + w.nx * 0.04, w.bottomY, w.z + tz * along + w.nz * 0.04, w.nx, w.nz, sx, sy));
     }
     w.mesh.visible = false;
     // The facade is 0.24 m deep and the wall 0.3 m: an inner skin covers the back
