@@ -31,6 +31,12 @@
         color: #ff5555; font: 700 44px system-ui, sans-serif; text-shadow: 0 2px 4px #000;
         pointer-events: none;
       }
+      #banner {
+        display: none; position: fixed; left: 0; right: 0; top: 22%; justify-content: center;
+        text-align: center; white-space: pre-line; color: #fff3e0;
+        font: 800 34px/1.35 system-ui, sans-serif; letter-spacing: 1px;
+        text-shadow: 0 2px 6px rgba(0,0,0,0.8); pointer-events: none;
+      }
       #hud {
         position: fixed; left: 12px; top: 12px; color: #fff; font: 13px/1.4 ui-monospace, monospace;
         text-shadow: 0 1px 2px #000; pointer-events: none; white-space: pre;
@@ -59,11 +65,13 @@
     <div id="hitmarker">×</div>
     <div id="damage"></div>
     <div id="dead">YOU DIED</div>
+    <div id="banner"></div>
     <div id="hud"></div>
     <div id="feed"></div>
     <div id="overlay">
       <div>
-        <h1>Agilos — Movement Test</h1>
+        <h1>Agilos</h1>
+        <p>Battle royale · you and 4 bots · last one standing wins · stay inside the zone</p>
         <p>Click to play</p>
         <p>WASD move · Mouse look · Space jump (again in air to double jump, or next to a wall to wall jump) · Shift sprint</p>
         <p>C while sprinting to slide (slide under the beams) · C to crouch · P quality</p>

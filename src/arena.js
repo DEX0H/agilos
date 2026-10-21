@@ -46,10 +46,13 @@ export function buildArena(scene) {
   const group = new THREE.Group();
   scene.add(group);
 
-  // Navigation points and explicit links (stairs) for bots
+  // Navigation points and explicit links (stairs, jumps) for bots
   const navPoints = [];
   const navLinks = [];
+  const navJumps = [];
   const nav = (x, y, z) => navPoints.push(new THREE.Vector3(x, y, z)) - 1;
+  // Jump between two roof edges. One-way for drops down to a lower roof.
+  const jump = (a, b, oneWay = false) => navJumps.push([nav(...a), nav(...b), oneWay]);
 
   // Low golden sun from the shared direction
   const sun = new THREE.DirectionalLight(0xffe2b8, 2.2);
@@ -247,6 +250,19 @@ export function buildArena(scene) {
     block(x, z, 1.4, 1.4, 1.0, { kind: 'wood', color: crateColor });
   }
 
+  // Roof-to-roof jumps for bots. Points sit 0.7 m inside each roof edge.
+  jump([17, 6, -12.2], [17, 6, -5.3]);              // NE roof <-> E roof, 5.5 m gap
+  jump([-12.2, 6, 17], [-7.75, 6, 17]);             // SW roof <-> hop platform
+  jump([-7.75, 6, 17], [-3.3, 6, 17]);              // hop platform <-> S roof
+  jump([-17, 9, -12.2], [-17, 3, -5.3], true);      // NW roof drops to W roof
+  jump([-12.2, 9, -16], [-3.3, 3, -16], true);      // NW roof drops to N roof
+  jump([12.2, 6, -16], [3.3, 3, -16], true);        // NE roof drops to N roof
+  jump([15, 9, 12.2], [15, 6, 5.3], true);          // SE roof drops to E roof
+  jump([10.8, 9, 17], [3.3, 6, 17], true);          // SE roof drops to S roof
+  jump([-17, 6, 12.2], [-17, 3, 5.3], true);        // SW roof drops to W roof
+  jump([5.3, 12, -3], [9.7, 6, -3], true);          // tower roof drops to E roof
+  jump([-5.3, 12, -3], [-9.7, 3, -3], true);        // tower roof drops to W roof
+
   // Ground grid of nav points wherever a body fits
   for (let x = -27.5; x <= 27.5; x += 5) {
     for (let z = -27.5; z <= 27.5; z += 5) {
@@ -276,5 +292,5 @@ export function buildArena(scene) {
     new THREE.Vector3(17.5, 6, 17.5),    // SE 2F
   ];
 
-  return { colliders, group, playerSpawn, mobSpawns, navPoints, navLinks };
+  return { colliders, group, playerSpawn, mobSpawns, navPoints, navLinks, navJumps };
 }

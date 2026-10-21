@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { Character, STAND_H } from './character.js';
+import { Character, STAND_H, NO_INPUT } from './character.js';
 import { GunState, HANDGUN } from './gun.js';
 
 // Bots play like players: same Character movement (sprint, slide, double jump,
@@ -105,6 +105,10 @@ export class Bot extends Character {
     this.goal = null;
     this.goalTimer = 0;
 
+    this.match = null;          // set by the Match, for zone awareness
+    this.jumpPending = null;    // next waypoint is across a gap: jump at the takeoff
+    this.airTarget = null;      // landing point while in the air on a planned jump
+
     // Movement style
     this.strafeDir = Math.random() < 0.5 ? -1 : 1;
     this.strafeTimer = 0;
@@ -195,13 +199,18 @@ export class Bot extends Character {
     return killed;
   }
 
-  respawn() {
-    this.spawn.copy(this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)]);
+  // `fixed` keeps the spawn the match assigned; otherwise pick a random one
+  respawn(fixed = false) {
+    if (!fixed) this.spawn.copy(this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)]);
     super.respawn();
     this.gun.ammo = this.gun.magSize;
+    this.gun.reloadTimer = 0;
     this.target = null;
+    this.targetVisible = false;
     this.path = [];
     this.goal = null;
+    this.jumpPending = null;
+    this.airTarget = null;
   }
 
   // ---------- Perception ----------
@@ -253,13 +262,21 @@ export class Bot extends Character {
     while (this.pathIndex < this.path.length) {
       const wp = this.path[this.pathIndex];
       const h = Math.hypot(wp.x - p.x, wp.z - p.z);
-      if (h < WAYPOINT_REACH && Math.abs(wp.y - p.y) < 1.2) this.pathIndex++;
-      else break;
+      if (h < WAYPOINT_REACH && Math.abs(wp.y - p.y) < 1.2) {
+        this.pathIndex++;
+        // Standing at a takeoff point: the next stretch is a jump across a gap
+        const next = this.path[this.pathIndex];
+        if (next && next.jump) this.jumpPending = next;
+      } else {
+        break;
+      }
     }
 
     let wp = this.path[this.pathIndex];
     if (!wp) wp = dest;
-    if (p.y < wp.y - 1.5 && this.onGround) this.repathTimer = 0; // fell off the route
+    // Fell off the route (but not while doing a planned drop)
+    if (p.y < wp.y - 1.5 && this.onGround && !this.airTarget) this.repathTimer = 0;
+    if (wp.jump) return this.dirTo(wp); // keep heading straight for the landing
 
     const dx = wp.x - p.x;
     const dz = wp.z - p.z;
@@ -273,8 +290,20 @@ export class Bot extends Character {
     return [dx / len, dz / len];
   }
 
+  dirTo(wp) {
+    const dx = wp.x - this.position.x;
+    const dz = wp.z - this.position.z;
+    const len = Math.hypot(dx, dz);
+    return len < 0.05 ? null : [dx / len, dz / len];
+  }
+
+  zoneLive() {
+    return this.match && this.match.state === 'live';
+  }
+
   pickGoal() {
-    const others = this.world.combatants.filter((c) => c !== this && !c.dead);
+    const m = this.zoneLive() ? this.match : null;
+    const others = this.world.combatants.filter((c) => c !== this && !c.dead && (!m || m.insideNext(c.position)));
     if (others.length && Math.random() < HUNT_CHANCE) {
       let near = others[0];
       for (const c of others) {
@@ -282,7 +311,13 @@ export class Bot extends Character {
       }
       this.goal = near.position.clone();
     } else {
-      this.goal = this.nav.randomNode().clone();
+      // Roam somewhere inside the zone the circle is heading to
+      this.goal = null;
+      for (let i = 0; i < 25 && !this.goal; i++) {
+        const n = this.nav.randomNode();
+        if (!m || m.insideNext(n)) this.goal = n.clone();
+      }
+      if (!this.goal) this.goal = m ? m.centre() : this.nav.randomNode().clone();
     }
     this.goalTimer = GOAL_TIME_MIN + Math.random() * GOAL_TIME_RAND;
   }
@@ -359,7 +394,12 @@ export class Bot extends Character {
     }
 
     // --- Move ---
-    if (t && this.targetVisible) {
+    // Outside (or at the edge of) the safe zone: getting back in comes first
+    const outside = this.zoneLive() && !this.match.inside(this.position, 2);
+    if (outside) {
+      move = this.followPath(this.match.centre(), dt);
+      input.sprint = true;
+    } else if (t && this.targetVisible) {
       const dx = t.position.x - this.position.x;
       const dz = t.position.z - this.position.z;
       const d = Math.hypot(dx, dz) || 1;
@@ -409,7 +449,8 @@ export class Bot extends Character {
       } else {
         this.goalTimer -= dt;
         if (!this.goal || this.goalTimer <= 0 ||
-            Math.hypot(this.goal.x - this.position.x, this.goal.z - this.position.z) < 1.5) {
+            Math.hypot(this.goal.x - this.position.x, this.goal.z - this.position.z) < 1.5 ||
+            (this.zoneLive() && !this.match.insideNext(this.goal))) {
           this.pickGoal();
         }
         dest = this.goal;
@@ -418,9 +459,32 @@ export class Bot extends Character {
 
       // Hop now and then while running around
       this.hopTimer -= dt;
-      if (this.hopTimer <= 0 && this.onGround && this.slideHold <= 0) {
+      if (this.hopTimer <= 0 && this.onGround && this.slideHold <= 0 && !this.jumpPending) {
         input.jump = true;
         this.hopTimer = 2.5 + Math.random() * 3;
+      }
+    }
+
+    // Planned jump across a gap: jump at the takeoff, double jump if coming up short
+    if (this.jumpPending && this.onGround) {
+      input.jump = true;
+      input.sprint = true;
+      this.airTarget = this.jumpPending;
+      this.jumpPending = null;
+      this.slideHold = 0;
+      const d = this.dirTo(this.airTarget);
+      if (d) move = d;
+    } else if (this.airTarget) {
+      if (this.onGround) {
+        this.airTarget = null;
+      } else {
+        input.sprint = true;
+        const h = Math.hypot(this.airTarget.x - this.position.x, this.airTarget.z - this.position.z);
+        if (this.velocity.y < 0 && this.position.y < this.airTarget.y + 0.8 && h > 1.0 && this.canDouble) {
+          input.jump = true;
+        }
+        const d = this.dirTo(this.airTarget);
+        if (d) move = d;
       }
     }
 
@@ -437,8 +501,8 @@ export class Bot extends Character {
       input.sprint = false;
     }
 
-    // Kick off walls when one is touched mid-air
-    if (this.state === 'wall' && Math.random() < 3 * dt) input.jump = true;
+    // Kick off walls when one is touched mid-air (not during a planned gap jump)
+    if (this.state === 'wall' && !this.airTarget && Math.random() < 3 * dt) input.jump = true;
 
     // Stuck against something: hop over it, then give up on the route
     const hs = Math.hypot(this.velocity.x, this.velocity.z);
@@ -472,8 +536,11 @@ export class Bot extends Character {
       return;
     }
     this.group.visible = true;
-    const input = this.think(dt);
-    this.simulate(dt, input);
+    if (this.frozen) {
+      this.simulate(dt, NO_INPUT);
+    } else {
+      this.simulate(dt, this.think(dt));
+    }
     this.animate(dt);
   }
 
@@ -502,8 +569,11 @@ export class Bot extends Character {
 }
 
 export class Bots {
-  constructor(scene, world, nav, spawnPoints) {
-    this.list = spawnPoints.map((s, i) => new Bot(scene, world, nav, s, i, spawnPoints));
+  constructor(scene, world, nav, spawnPoints, count = 4) {
+    this.list = [];
+    for (let i = 0; i < count; i++) {
+      this.list.push(new Bot(scene, world, nav, spawnPoints[i % spawnPoints.length], i, spawnPoints));
+    }
     for (const b of this.list) world.add(b);
   }
 

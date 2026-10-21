@@ -79,6 +79,9 @@ export class Character {
     this.kills = 0;
     this.deaths = 0;
     this.lastAttacker = null;
+
+    this.frozen = false;      // no movement input (match countdown)
+    this.canRespawn = true;   // off during a battle royale match
   }
 
   eye() {
@@ -140,7 +143,7 @@ export class Character {
     this.velocity.set(0, 0, 0);
     this.respawnTimer -= dt;
     this.state = 'dead';
-    if (this.respawnTimer <= 0) this.respawn();
+    if (this.respawnTimer <= 0 && this.canRespawn) this.respawn();
     return this.dead;
   }
 

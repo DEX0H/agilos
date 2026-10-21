@@ -7,6 +7,7 @@ import { Knife } from './knife.js';
 import { World } from './world.js';
 import { NavGraph } from './nav.js';
 import { Bots } from './bots.js';
+import { Match } from './match.js';
 import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
 import { createDust } from './dust.js';
@@ -45,12 +46,15 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 scene.add(camera); // the gun viewmodel is a child of the camera
 
 // ---- Game world ----
-const { colliders, playerSpawn, mobSpawns, navPoints, navLinks } = buildArena(scene);
+const { colliders, playerSpawn, mobSpawns, navPoints, navLinks, navJumps } = buildArena(scene);
 const world = new World(scene, colliders);
 const player = new Player(camera, colliders, playerSpawn);
 world.add(player);
-const nav = new NavGraph(colliders, navPoints, navLinks);
-const bots = new Bots(scene, world, nav, mobSpawns);
+const nav = new NavGraph(colliders, navPoints, navLinks, navJumps);
+const BOT_COUNT = 4;
+const bots = new Bots(scene, world, nav, mobSpawns, BOT_COUNT);
+const spawnPoints = [playerSpawn, ...mobSpawns];
+const match = new Match(scene, world, player, bots, spawnPoints);
 
 const weapon = new Handgun(camera, scene, player);
 const knife = new Knife(camera, scene, player);
@@ -69,6 +73,7 @@ const deadMsg = document.getElementById('dead');
 const lockMsg = document.getElementById('lockmsg');
 const spreadRing = document.getElementById('spread');
 const feed = document.getElementById('feed');
+const banner = document.getElementById('banner');
 
 let fps = 60;
 let hitmarkerTimer = 0;
@@ -94,6 +99,10 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Digit2') setWeapon(knife);
   if (e.code === 'KeyF' && !e.repeat) knife.flip();
   if (e.code === 'KeyP' && !e.repeat) setQuality(quality === 'high' ? 'low' : 'high');
+  // Enter starts a new match once you are out or the match is over
+  if (e.code === 'Enter' && !e.repeat && (match.state === 'over' || (match.state === 'live' && player.dead))) {
+    match.start();
+  }
 });
 
 document.addEventListener('pointerlockchange', () => {
@@ -101,6 +110,8 @@ document.addEventListener('pointerlockchange', () => {
   overlay.style.display = locked ? 'none' : 'flex';
   crosshair.style.display = locked ? 'block' : 'none';
   if (locked) lockMsg.style.display = 'none';
+  // First time you click in, the match begins
+  if (locked && match.state === 'warmup') match.start();
 });
 
 // The browser refused mouse lock (raised by pointerlockerror or by the player's click handler)
@@ -112,7 +123,7 @@ document.addEventListener('agilos:lockfailed', showLockFailed);
 
 // Left click fires the instant the button goes down, against the latest aim
 document.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || !player.locked) return;
+  if (e.button !== 0 || !player.locked || player.frozen) return;
   player.syncAim();
   const r = active.fire(world);
   if (r.hit) hitmarkerTimer = 0.15;
@@ -131,7 +142,7 @@ world.onKill((killer, victim, how) => {
   line.className = 'feed-line';
   const k = killer ? killer.name : 'World';
   const icon = how === 'headshot' ? '⌖ headshot' : how;
-  line.textContent = `${k}  [${icon}]  ${victim.name}`;
+  line.textContent = killer ? `${k}  [${icon}]  ${victim.name}` : `${victim.name}  [${how}]`;
   if (killer === player || victim === player) line.classList.add('mine');
   feed.prepend(line);
   while (feed.children.length > 6) feed.lastChild.remove();
@@ -141,7 +152,7 @@ world.onKill((killer, victim, how) => {
 
 // Debug handle for automated testing
 window.agilos = {
-  player, weapon, knife, setWeapon, world, nav, bots, renderer, scene, postfx,
+  player, weapon, knife, setWeapon, world, nav, bots, match, renderer, scene, postfx,
   get kills() { return player.kills; },
 };
 
@@ -157,6 +168,7 @@ function frame(now) {
   weapon.update(dt);
   knife.update(dt);
   bots.update(dt);
+  match.update(dt);
   world.update(dt);
 
   sky.position.copy(camera.position);
@@ -177,7 +189,11 @@ function frame(now) {
   hitmarkerTimer = Math.max(0, hitmarkerTimer - dt);
   hitmarker.style.opacity = String(hitmarkerTimer / 0.15);
   damageVignette.style.opacity = String(player.damageFlash / 0.35);
-  deadMsg.style.display = player.dead ? 'flex' : 'none';
+  const bannerText = match.bannerText();
+  banner.style.display = bannerText ? 'flex' : 'none';
+  banner.textContent = bannerText;
+  // "Killed by" only when the match banner isn't already saying what happened
+  deadMsg.style.display = player.dead && !bannerText ? 'flex' : 'none';
   if (player.dead) {
     deadMsg.textContent = player.lastAttacker ? `KILLED BY ${player.lastAttacker.name.toUpperCase()}` : 'YOU DIED';
   }
@@ -187,7 +203,8 @@ function frame(now) {
   hud.textContent =
     `HP      ${Math.ceil(player.health)}\n` +
     `WEAPON  ${active === knife ? 'knife (F flip)' : `handgun  ${reloading ? 'RELOADING' : `${weapon.ammo}/${weapon.magSize}   reserve ${weapon.reserve}`}`}\n` +
-    `K/D     ${player.kills}/${player.deaths}   bots alive ${bots.aliveCount()}/${bots.list.length}\n` +
+    `KILLS   ${player.kills}   alive ${match.aliveCount()}/${match.total}\n` +
+    (match.zoneText() ? `${match.zoneText()}\n` : '') +
     `speed   ${Math.hypot(v.x, v.z).toFixed(1)} m/s   height ${player.position.y.toFixed(1)} m\n` +
     `state   ${player.state}   double jump ${player.canDouble ? 'ready' : 'used'}\n` +
     `fps     ${fps.toFixed(0)}   quality ${quality} (P)`;

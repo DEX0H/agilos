@@ -1,4 +1,4 @@
-import { Character } from './character.js';
+import { Character, NO_INPUT } from './character.js';
 
 // The local player: a Character driven by keyboard and mouse, with the camera on its eyes.
 
@@ -97,7 +97,7 @@ export class Player extends Character {
       jump: this.jumpQueued,
     };
     this.jumpQueued = false;
-    this.simulate(dt, input);
+    this.simulate(dt, this.frozen ? NO_INPUT : input);
     this.updateCamera();
   }
 

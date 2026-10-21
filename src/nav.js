@@ -14,17 +14,26 @@ const _o = new THREE.Vector3();
 const _d = new THREE.Vector3();
 
 export class NavGraph {
-  constructor(colliders, points, links) {
+  // jumps: [a, b, oneWay] gaps a bot must jump across (a to b, and back unless oneWay)
+  constructor(colliders, points, links, jumps = []) {
     this.colliders = colliders;
     this.nodes = points.map((p) => ({ p: p.clone(), edges: [] }));
     for (const [a, b] of links) this.link(a, b);
+    for (const [a, b, oneWay] of jumps) {
+      this.edge(a, b, true);
+      if (!oneWay) this.edge(b, a, true);
+    }
     this.autoLink();
   }
 
+  edge(a, b, jump = false) {
+    const cost = this.nodes[a].p.distanceTo(this.nodes[b].p) * (jump ? 1.3 : 1);
+    this.nodes[a].edges.push({ to: b, cost, jump });
+  }
+
   link(a, b) {
-    const cost = this.nodes[a].p.distanceTo(this.nodes[b].p);
-    this.nodes[a].edges.push({ to: b, cost });
-    this.nodes[b].edges.push({ to: a, cost });
+    this.edge(a, b);
+    this.edge(b, a);
   }
 
   // Solid floor at height y under (x, z)?
@@ -114,6 +123,7 @@ export class NavGraph {
 
   // A* from the node nearest `from` to the node nearest `to`.
   // Returns a list of points, ending at `to`. Empty if unreachable.
+  // A point with `.jump = true` must be reached by jumping from the previous one.
   findPath(from, to) {
     const s = this.nearest(from);
     const t = this.nearest(to);
@@ -121,6 +131,7 @@ export class NavGraph {
     const g = new Float64Array(n).fill(Infinity);
     const f = new Float64Array(n).fill(Infinity);
     const came = new Int32Array(n).fill(-1);
+    const cameJump = new Uint8Array(n);
     const closed = new Uint8Array(n);
     const open = [s];
     const goal = this.nodes[t].p;
@@ -142,13 +153,18 @@ export class NavGraph {
           g[e.to] = ng;
           f[e.to] = ng + this.nodes[e.to].p.distanceTo(goal);
           came[e.to] = cur;
+          cameJump[e.to] = e.jump ? 1 : 0;
         }
       }
     }
     if (s !== t && came[t] === -1) return [];
 
     const out = [];
-    for (let c = t; c !== -1; c = came[c]) out.push(this.nodes[c].p);
+    for (let c = t; c !== -1; c = came[c]) {
+      const p = this.nodes[c].p.clone();
+      p.jump = cameJump[c] === 1;
+      out.push(p);
+    }
     out.reverse();
     out.push(to.clone());
     return out;
