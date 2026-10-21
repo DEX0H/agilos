@@ -41,8 +41,7 @@ export const settings = { binds: defaults(), sens: DEFAULT_SENS, layout: 'auto',
 // known actions with plausible key codes, a known layout and a finite sensitivity are accepted.
 const LAYOUTS = new Set(['auto', 'qwerty', 'qwertz', 'azerty']);
 const CODE_RE = /^[A-Za-z][A-Za-z0-9]{0,23}$/;
-try {
-  const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+function applySaved(saved) {
   if (saved && typeof saved === 'object') {
     if (saved.binds && typeof saved.binds === 'object') {
       for (const [action] of ACTIONS) {
@@ -58,8 +57,23 @@ try {
     if (typeof saved.layout === 'string' && LAYOUTS.has(saved.layout)) settings.layout = saved.layout;
     if (Number.isInteger(saved.bots)) settings.bots = Math.min(MAX_BOTS, Math.max(MIN_BOTS, saved.bots));
   }
+}
+try {
+  applySaved(JSON.parse(localStorage.getItem(STORE) || 'null'));
 } catch {
   // storage unavailable or corrupt: keep defaults
+}
+
+// Settings synced from the player's profile: validated exactly like local ones
+export function applyRemoteSettings(remote) {
+  applySaved(remote);
+  changed();
+  for (const fn of botListeners) fn(settings.bots);
+}
+
+// A plain copy for syncing to the profile
+export function settingsSnapshot() {
+  return { binds: { ...settings.binds }, sens: settings.sens, layout: settings.layout, bots: settings.bots };
 }
 
 export function save() {

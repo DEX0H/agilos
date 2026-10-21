@@ -8,7 +8,10 @@ Apex Legends' movement, Call of Duty's look and Counter-Strike's gunplay.
 **Download for Windows:** [Agilos-Setup.exe](https://github.com/DEX0H/agilos/releases/latest/download/Agilos-Setup.exe)
 (Windows 10 and 11, 64-bit; [all releases](https://github.com/DEX0H/agilos/releases),
 [code signing policy](#code-signing-policy)). The installer adds Start menu and desktop
-shortcuts and the game updates itself. Uninstall from Windows Settings > Apps > Agilos.
+shortcuts and the game keeps itself on the latest version: every change released here
+reaches installed copies automatically (checked at launch and every 20 minutes, installed
+when you close the game or with "Restart to update" in the menu). Uninstall from Windows
+Settings > Apps > Agilos.
 
 ## The game
 
@@ -81,10 +84,10 @@ npm run app        # build, then run the desktop app
 npm run dist:win   # build the installer into release/ (on Windows)
 ```
 
-Releases: bump `version` in `package.json`, merge, then push a tag `v<version>`. The
-[release workflow](.github/workflows/release.yml) builds the installer on Windows,
-signs it when signing is set up ([SIGNING.md](SIGNING.md)) and publishes it to GitHub
-Releases, where the download button and the in-app updater find it.
+Releases are automatic: every merge to `main` (except docs-only changes) runs the
+[release workflow](.github/workflows/release.yml), which builds the installer on Windows
+as version `<major>.<minor>.<run number>` and publishes it to GitHub Releases, where the
+download button and the in-app updater find it.
 
 ## Code layout
 
@@ -118,10 +121,9 @@ Windows releases are built only by this repository's
 [release workflow](.github/workflows/release.yml) on GitHub Actions, from the tagged source.
 Nothing is built or signed on a personal machine.
 
-- **Signing:** free code signing provided by [SignPath.io](https://signpath.io), with a
-  certificate by [SignPath Foundation](https://signpath.org), once our application is
-  approved. Until then, installers are published unsigned and Windows SmartScreen may
-  warn (More info > Run anyway).
+- **Signing:** installers are currently not code-signed, so Windows SmartScreen may warn
+  on first install (More info > Run anyway). The release workflow can sign through
+  SignPath.io once that is set up ([SIGNING.md](SIGNING.md)).
 - **Team roles:** authors, reviewers and approvers:
   [@DEX0H](https://github.com/DEX0H) (owner). Every change reaches `main` through a pull
   request with a passing CI build, and every signing request is approved by hand.
@@ -130,11 +132,15 @@ Nothing is built or signed on a personal machine.
 
 ## Privacy
 
-The game collects no personal data and has no analytics or ads. The browser version
-talks only to its own website. The Windows app also checks GitHub Releases
-(github.com) for updates at launch. You can turn that off in the menu: untick "Check for
-updates at launch". Settings stay on your computer (browser storage, or the app's folder
-under `%APPDATA%\Agilos`).
+The game has no analytics or ads. Playing as a guest stores nothing outside your device.
+If you sign in (Google or email), Firebase (Google) stores your email address, your
+player name and colour, your settings and your match stats, in the EU (eur3). Only you
+can read them. "Delete account and stats" in the profile menu removes all of it.
+
+Apart from sign-in and stats, the browser version talks only to its own website. The
+Windows app also checks GitHub Releases (github.com) for updates at launch and every 20
+minutes; untick "Check for updates" in the menu to turn that off. Local settings stay on
+your computer (browser storage, or the app's folder under `%APPDATA%\Agilos`).
 
 ## License
 

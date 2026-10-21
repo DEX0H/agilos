@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld('agilosDesktop', {
   info: () => ipcRenderer.invoke('agilos:info'),
   setAutoUpdate: (on) => ipcRenderer.invoke('agilos:set-auto-update', !!on),
   onUpdateReady: (fn) => ipcRenderer.on('agilos:update-ready', (_e, version) => fn(String(version))),
+  installUpdate: () => ipcRenderer.invoke('agilos:install-update'),
+  googleSignIn: () => ipcRenderer.invoke('agilos:google-sign-in'),
 });

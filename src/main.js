@@ -12,6 +12,9 @@ import { Player } from './player.js';
 import { Firearm } from './weapon.js';
 import { HANDGUN, RARITY_COLORS } from './gun.js';
 import { MysteryBoxes } from './mysterybox.js';
+import { MatchStats } from './stats.js';
+import { initProfile } from './profile.js';
+import { buildAccountUI } from './account-ui.js';
 import { Knife } from './knife.js';
 import { World } from './world.js';
 import { NavGraph } from './nav.js';
@@ -84,7 +87,14 @@ function startMatch() {
   bots.setCount(settings.bots);
   boxes.place();
   match.start();
+  stats.start();
 }
+
+// Per-match stats, saved to the profile (or this browser for guests) when the match ends
+const stats = new MatchStats({
+  player, world, match,
+  currentWeapon: () => (active === knife ? 'knife' : weapon.spec.name),
+});
 
 const dust = createDust(scene);
 const postfx = createPostFx(renderer, scene, camera);
@@ -136,6 +146,7 @@ function useBox() {
     if (player.dead) return;
     weapon.equip(spec);
     setWeapon(weapon);
+    stats.boxRoll(spec);
     showToast(`${spec.label.toUpperCase()}  ·  ${RARITY_NAMES[spec.rarity]}`, RARITY_COLORS[spec.rarity], 2.2);
   });
 }
@@ -207,6 +218,7 @@ document.addEventListener('mousedown', (e) => {
   if (active === weapon) weapon.triggerHeld = true;
   player.syncAim();
   const r = active.fire(world);
+  stats.shot(r);
   if (r.hit) hitmarkerTimer = 0.15;
 });
 document.addEventListener('mouseup', (e) => {
@@ -239,9 +251,17 @@ world.onKill((killer, victim, how) => {
 // Debug handle for automated testing. Only exposed in local dev or with ?debug in the URL,
 // so it isn't sitting on every player's window object. (Everything client-side can be
 // changed by a determined player anyway; real anti-cheat needs an authoritative server.)
+// Profiles: sign-in card, profile chip and stats screen in the menu. Signed-in players
+// show their name in the kill feed.
+const account = buildAccountUI(overlay, (name) => { player.name = name || 'You'; });
+stats.onSaved = (record) => {
+  showToast(record.win ? 'VICTORY SAVED TO YOUR STATS' : `MATCH SAVED · #${record.place} of ${record.total}`, '#dfe9ff', 2.5);
+};
+initProfile().catch((e) => console.warn('Profiles unavailable', e));
+
 const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 if (DEBUG) window.agilos = {
-  player, weapon, knife, setWeapon, world, nav, bots, match, boxes, renderer, scene, postfx, useBox,
+  player, weapon, knife, setWeapon, world, nav, bots, match, boxes, renderer, scene, postfx, useBox, stats, account,
   get kills() { return player.kills; },
 };
 
@@ -306,10 +326,20 @@ if (window.agilosDesktop) {
     box.type = 'checkbox';
     box.checked = info.autoUpdate;
     box.addEventListener('change', () => window.agilosDesktop.setAutoUpdate(box.checked));
-    label.append(box, ' Check for updates at launch');
+    label.append(box, ' Check for updates (always stay on the latest version)');
     desktopBox.append(ver, label);
   }).catch(() => {});
-  window.agilosDesktop.onUpdateReady((v) => showToast(`Update ${v} ready: it installs when you close the game`, '#ffd27a', 6));
+  window.agilosDesktop.onUpdateReady((v) => {
+    showToast(`Update ${v} downloaded: it installs when you close the game`, '#ffd27a', 6);
+    // A button in the menu installs it right away
+    if (desktopBox.querySelector('.update-now')) return;
+    const now = document.createElement('button');
+    now.type = 'button';
+    now.className = 'acct-btn primary update-now';
+    now.textContent = `Restart to update to v${v}`;
+    now.addEventListener('click', () => window.agilosDesktop.installUpdate());
+    desktopBox.append(now);
+  });
 }
 
 // Ring announcements in the toast line
@@ -410,6 +440,7 @@ function frame(now) {
   if (active === weapon && weapon.triggerHeld && weapon.spec.auto && player.locked && !player.frozen && !player.dead) {
     player.syncAim();
     const r = weapon.fire(world);
+    stats.shot(r);
     if (r.hit) hitmarkerTimer = 0.15;
   }
   weapon.update(dt);
@@ -417,6 +448,7 @@ function frame(now) {
   bots.update(dt);
   boxes.update(dt, t, camera.position);
   match.update(dt);
+  stats.update();
   world.update(dt);
 
   sky.position.copy(camera.position);
