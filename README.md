@@ -7,9 +7,12 @@ Apex Legends' movement, Call of Duty's look and Counter-Strike's gunplay.
 
 ## The game
 
-- **Mode:** a battle royale for you and 1 to 15 bots (4 by default, set in the menu). Everyone spawns at a random point,
-  there are no respawns, and the last one standing wins. A safe zone shrinks in four
-  phases and hurts anyone outside it.
+- **Mode:** a battle royale for you and 1 to 15 bots (4 by default, set in the menu).
+  Everyone spawns at a random point, there are no respawns, and the last one standing wins.
+- **The ring:** six Apex-style rounds. Each round the next ring is marked (white wall, and a
+  dashed circle on the minimap), then the ring closes onto it. Outside, you take damage
+  every 1.5 seconds, more each round (3 up to 25), and the last ring closes completely.
+- **Minimap:** top right, north up: the ring, the next ring, buildings, mystery boxes and you.
 - **Spawn shield:** 10 seconds of protection after spawning. Firing drops it early.
 - **Map:** a vertical city block of nine open-sided buildings, 1 to 4 stories. It has
   stairs, bridges between floors and roofs, jumpable roof gaps and wall-jump chimneys.

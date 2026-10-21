@@ -105,6 +105,9 @@ const hpFill = document.getElementById('hpfill');
 const hpShield = document.getElementById('hpshield');
 const hpNum = document.getElementById('hpnum');
 const promptEl = document.getElementById('prompt');
+const minimap = document.getElementById('minimap');
+const mapCtx = minimap.getContext('2d');
+const ringInfo = document.getElementById('ringinfo');
 const ammoName = document.getElementById('ammoname');
 const ammoRow = document.getElementById('ammorow');
 const ammoMag = document.getElementById('ammomag');
@@ -287,6 +290,91 @@ function updateAmmo() {
   }
 }
 
+// Ring announcements in the toast line
+match.onRing = (text) => showToast(text, text.includes('CLOSING') ? '#ff8a5c' : '#dfe9ff', 2.5);
+
+// Minimap, north (-z) up. Redrawn every few frames; it is cheap.
+const MAP_SPAN = 62;
+function drawMinimap() {
+  const S = minimap.width;
+  const k = S / MAP_SPAN;
+  const mx = (x) => (x + MAP_SPAN / 2) * k;
+  const ctx = mapCtx;
+  ctx.clearRect(0, 0, S, S);
+  // Buildings, lighter the taller they are
+  for (const r of arena.roofs) {
+    const l = 30 + r.y * 3;
+    ctx.fillStyle = `rgb(${l},${l + 4},${l + 10})`;
+    ctx.fillRect(mx(r.cx - r.w / 2), mx(r.cz - r.d / 2), r.w * k, r.d * k);
+  }
+  const z = match.zone;
+  const live = match.state === 'live' || match.state === 'over' || match.state === 'countdown';
+  if (live) {
+    // Outside the ring: red wash
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, S, S);
+    ctx.arc(mx(z.cx), mx(z.cz), Math.max(0, z.r) * k, 0, Math.PI * 2, true);
+    ctx.fillStyle = 'rgba(200,40,30,0.32)';
+    ctx.fill('evenodd');
+    ctx.restore();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#5fa8ff';
+    ctx.beginPath();
+    ctx.arc(mx(z.cx), mx(z.cz), Math.max(0.1, z.r) * k, 0, Math.PI * 2);
+    ctx.stroke();
+    if (z.phase < match.rounds && z.toR < z.r - 0.5) {
+      ctx.setLineDash([8, 6]);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(mx(z.toX), mx(z.toZ), Math.max(0.6, z.toR) * k, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  // Mystery boxes: gold when ready, dim when recharging
+  for (const b of boxes.active()) {
+    ctx.fillStyle = b.ready ? '#ffb02e' : 'rgba(255,176,46,0.35)';
+    ctx.fillRect(mx(b.position.x) - 5, mx(b.position.z) - 5, 10, 10);
+  }
+  // You: an arrow pointing where you look
+  if (!player.dead) {
+    const px = mx(player.position.x);
+    const pz = mx(player.position.z);
+    ctx.save();
+    ctx.translate(px, pz);
+    ctx.rotate(-player.yaw);
+    ctx.beginPath();
+    ctx.moveTo(0, -14);
+    ctx.lineTo(9, 10);
+    ctx.lineTo(0, 5);
+    ctx.lineTo(-9, 10);
+    ctx.closePath();
+    ctx.fillStyle = '#ffe14d';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+  // Ring round and timer under the map
+  if (live && match.state !== 'countdown') {
+    if (z.phase >= match.rounds) {
+      ringInfo.textContent = 'RING CLOSED';
+      ringInfo.className = 'closing';
+    } else {
+      const s = Math.max(0, Math.ceil(z.phaseTime));
+      const t = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+      ringInfo.textContent = z.shrinking ? `RING ${z.phase + 1}/${match.rounds} CLOSING ${t}` : `RING ${z.phase + 1}/${match.rounds} IN ${t}`;
+      ringInfo.className = z.shrinking ? 'closing' : '';
+    }
+  } else {
+    ringInfo.textContent = '';
+  }
+}
+let mapFrame = 0;
+
 let last = performance.now();
 function frame(now) {
   // Clamp both ways: the first rAF timestamp can be earlier than `last`
@@ -362,6 +450,7 @@ function frame(now) {
   }
 
   updateAmmo();
+  if (++mapFrame % 3 === 0) drawMinimap();
   const v = player.velocity;
   const shield = player.shielded && !player.dead ? `   SHIELD ${Math.ceil(player.shieldTimer)}s (firing drops it)` : '';
   hud.textContent =

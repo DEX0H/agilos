@@ -5,14 +5,21 @@ import * as THREE from 'three';
 
 const COUNTDOWN = 3;
 const START_RADIUS = 44;        // covers the whole 60 x 60 map at the start
-const START_DPS = 2;            // zone damage per second before the first close
 const MAP_HALF = 26;            // zone centres stay inside this square
-// Each phase: wait, then shrink to `radius` over `shrink` seconds; after that, `dps` outside
-const PHASES = [
-  { wait: 15, shrink: 20, radius: 26, dps: 4 },
-  { wait: 15, shrink: 15, radius: 15, dps: 7 },
-  { wait: 12, shrink: 12, radius: 7, dps: 12 },
-  { wait: 8, shrink: 15, radius: 0, dps: 20 },
+// Apex-style ring rounds, scaled to this small map (Apex Arenas: 45/35/30/15 s waits,
+// damage per tick rising each round, the last ring closing completely).
+// Each round: `wait` with the next ring shown, then the ring closes to `radius` over
+// `shrink` seconds. Outside it you take `tick` damage every TICK seconds; the damage of
+// a round applies from the moment that round's ring starts closing.
+export const TICK = 1.5;
+const START_TICK = 2;
+export const PHASES = [
+  { wait: 20, shrink: 20, radius: 30, tick: 3 },
+  { wait: 20, shrink: 15, radius: 20, tick: 5 },
+  { wait: 15, shrink: 12, radius: 12, tick: 8 },
+  { wait: 12, shrink: 10, radius: 6, tick: 12 },
+  { wait: 10, shrink: 10, radius: 2.5, tick: 18 },
+  { wait: 8, shrink: 15, radius: 0, tick: 25 },
 ];
 
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -33,8 +40,9 @@ export class Match {
       cx: 0, cz: 0, r: START_RADIUS,
       fromX: 0, fromZ: 0, fromR: START_RADIUS,
       toX: 0, toZ: 0, toR: START_RADIUS,
-      phase: 0, phaseTime: 0, shrinking: false, dps: START_DPS,
+      phase: 0, phaseTime: 0, shrinking: false, tick: START_TICK, tickTimer: TICK,
     };
+    this.onRing = null; // (text) => void, for announcements
 
     // Zone wall: a tall translucent cylinder that glows a little
     this.wall = new THREE.Mesh(
@@ -52,6 +60,19 @@ export class Match {
     this.wall.renderOrder = 2;
     this.wall.visible = false;
     scene.add(this.wall);
+
+    // Where the ring goes next: a thin white wall
+    this.nextWall = new THREE.Mesh(
+      new THREE.CylinderGeometry(1, 1, 40, 128, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(1.4, 1.4, 1.4), transparent: true, opacity: 0.07,
+        side: THREE.DoubleSide, depthWrite: false, fog: false,
+      }),
+    );
+    this.nextWall.position.y = 20;
+    this.nextWall.renderOrder = 2;
+    this.nextWall.visible = false;
+    scene.add(this.nextWall);
 
     bots.match = this;
     for (const b of bots.list) b.match = this;
@@ -94,7 +115,7 @@ export class Match {
 
     const z = this.zone;
     Object.assign(z, {
-      cx: 0, cz: 0, r: START_RADIUS, phase: 0, shrinking: false, dps: START_DPS,
+      cx: 0, cz: 0, r: START_RADIUS, phase: 0, shrinking: false, tick: START_TICK, tickTimer: TICK,
       phaseTime: PHASES[0].wait,
     });
     this.planNext();
@@ -131,6 +152,8 @@ export class Match {
       if (z.phaseTime <= 0) {
         z.shrinking = true;
         z.phaseTime = ph.shrink;
+        z.tick = ph.tick;
+        this.announce(z.phase === PHASES.length - 1 ? 'FINAL RING CLOSING' : `RING ${z.phase + 1} CLOSING`);
       }
       return;
     }
@@ -139,15 +162,21 @@ export class Match {
     z.cz = THREE.MathUtils.lerp(z.fromZ, z.toZ, t);
     z.r = THREE.MathUtils.lerp(z.fromR, z.toR, t);
     if (z.phaseTime <= 0) {
-      z.dps = ph.dps;
       z.phase++;
       z.shrinking = false;
       if (z.phase < PHASES.length) {
         z.phaseTime = PHASES[z.phase].wait;
         this.planNext();
+        this.announce('NEXT RING MARKED');
       }
     }
   }
+
+  announce(text) {
+    if (this.onRing) this.onRing(text);
+  }
+
+  get rounds() { return PHASES.length; }
 
   // Inside the current safe circle, with an optional safety margin
   inside(pos, margin = 0) {
@@ -177,9 +206,15 @@ export class Match {
 
     if (this.state === 'live' || this.state === 'over') {
       this.updateZone(dt);
-      for (const c of this.world.combatants) {
-        if (c.dead || this.inside(c.position)) continue;
-        if (c.takeDamage(this.zone.dps * dt, null)) this.world.reportKill(null, c, 'zone');
+      // Ring damage comes in ticks, like Apex
+      const z = this.zone;
+      z.tickTimer -= dt;
+      if (z.tickTimer <= 0) {
+        z.tickTimer += TICK;
+        for (const c of this.world.combatants) {
+          if (c.dead || this.inside(c.position)) continue;
+          if (c.takeDamage(z.tick, null)) this.world.reportKill(null, c, 'ring');
+        }
       }
     }
 
@@ -194,6 +229,11 @@ export class Match {
     this.wall.position.x = z.cx;
     this.wall.position.z = z.cz;
     this.wall.scale.set(Math.max(0.01, z.r), 1, Math.max(0.01, z.r));
+    const showNext = z.phase < PHASES.length && (this.state === 'live' || this.state === 'countdown') && z.toR < z.r - 0.5;
+    this.nextWall.visible = showNext && z.toR > 0.3;
+    this.nextWall.position.x = z.toX;
+    this.nextWall.position.z = z.toZ;
+    this.nextWall.scale.set(Math.max(0.01, z.toR), 1, Math.max(0.01, z.toR));
   }
 
   // One line for the HUD about the zone, from the player's point of view
@@ -201,9 +241,10 @@ export class Match {
     if (this.state !== 'live' && this.state !== 'over') return '';
     const z = this.zone;
     let line;
-    if (z.phase >= PHASES.length) line = 'ZONE    closed';
-    else if (z.shrinking) line = `ZONE    shrinking ${Math.ceil(z.phaseTime)}s`;
-    else line = `ZONE    closing in ${Math.ceil(z.phaseTime)}s`;
+    const round = `RING ${Math.min(z.phase + 1, PHASES.length)}/${PHASES.length}`;
+    if (z.phase >= PHASES.length) line = 'RING    closed';
+    else if (z.shrinking) line = `${round}  closing ${Math.ceil(z.phaseTime)}s`;
+    else line = `${round}  closes in ${Math.ceil(z.phaseTime)}s`;
     const p = this.player;
     if (!p.dead && !this.inside(p.position)) {
       const dx = z.cx - p.position.x;
@@ -211,7 +252,7 @@ export class Match {
       const dist = Math.max(0, Math.hypot(dx, dz) - z.r);
       const ang = Math.atan2(dx, -dz); // 0 = north (-z)
       const dir = DIRS[(Math.round(ang / (Math.PI / 4)) + 8) % 8];
-      line += `\nOUTSIDE ZONE  -${z.dps}/s   safe ${dist.toFixed(0)} m ${dir}`;
+      line += `\nOUTSIDE RING  -${z.tick} every ${TICK}s   safe ${dist.toFixed(0)} m ${dir}`;
     }
     return line;
   }
