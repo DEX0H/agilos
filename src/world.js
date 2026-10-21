@@ -75,6 +75,14 @@ export class World {
   }
 
   update(dt) {
+    // Safety net: anyone who leaves the map dies and respawns
+    for (const c of this.combatants) {
+      if (!c.dead && c.position.y < -20) {
+        c.takeDamage(Infinity, null);
+        this.reportKill(null, c, 'fell');
+      }
+    }
+
     for (let i = this.tracers.length - 1; i >= 0; i--) {
       const t = this.tracers[i];
       t.life -= dt;

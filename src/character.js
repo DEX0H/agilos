@@ -65,6 +65,8 @@ export class Character {
     this.wallNormal = new THREE.Vector3();
     this.wallTimer = 0;
     this.wallCooldown = 0;
+    this.wallBox = null;       // wall currently touched
+    this.lastWallBox = null;   // wall last kicked off; can't reuse it until landing
 
     this.state = 'air';
 
@@ -121,6 +123,8 @@ export class Character {
     this.sliding = false;
     this.slideCooldown = 0;
     this.wallTimer = 0;
+    this.wallBox = null;
+    this.lastWallBox = null;
     this.height = STAND_H;
     this.eyeOff = STAND_H - EYE_BELOW_TOP;
   }
@@ -201,12 +205,15 @@ export class Character {
           this.velocity.z *= SLIDE_JUMP_BOOST;
           this.endSlide();
         }
-      } else if (this.wallTimer > 0 && this.wallCooldown <= 0) {
+      } else if (this.wallTimer > 0 && this.wallCooldown <= 0 && this.wallBox !== this.lastWallBox) {
+        // Wall jump. Same wall twice in a row is not allowed (no climbing a single wall),
+        // alternating between two walls is.
         this.velocity.y = WALL_JUMP_UP;
         this.velocity.x = this.wallNormal.x * WALL_JUMP_OUT;
         this.velocity.z = this.wallNormal.z * WALL_JUMP_OUT;
         this.wallTimer = 0;
         this.wallCooldown = WALL_JUMP_COOLDOWN;
+        this.lastWallBox = this.wallBox;
         this.canDouble = true;
       } else if (this.canDouble) {
         this.velocity.y = DOUBLE_JUMP_VEL;
@@ -301,6 +308,7 @@ export class Character {
         this.onGround = true;
         this.canDouble = true;
         this.wallTimer = 0;
+        this.lastWallBox = null;
         return;
       }
     }
@@ -331,6 +339,7 @@ export class Character {
             b.min.z < z1 && b.max.z > z0) {
           this.wallNormal.set(-dx, 0, -dz);
           this.wallTimer = WALL_STICK;
+          this.wallBox = b;
           return;
         }
       }

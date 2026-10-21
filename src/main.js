@@ -147,7 +147,8 @@ window.agilos = {
 
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  // Clamp both ways: the first rAF timestamp can be earlier than `last`
+  const dt = Math.max(0, Math.min((now - last) / 1000, 0.05));
   const t = now / 1000;
   last = now;
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
