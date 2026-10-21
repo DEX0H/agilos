@@ -46,9 +46,9 @@ export async function dressCity(scene, arena) {
   const place = (name, matrix) => { if (pieces[name]) pieces[name].placements.push(matrix.clone()); };
 
   // Module transform: origin at the bottom centre of the module's front face
-  const moduleMatrix = (x, y, z, nx, nz, sx = 1, sy = 1) => {
+  const moduleMatrix = (x, y, z, nx, nz, sx = 1, sy = 1, sz = 1) => {
     _q.setFromAxisAngle(UP, Math.atan2(nx, nz)); // local +Z -> outward normal
-    _s.set(sx, sy, 1);
+    _s.set(sx, sy, sz);
     _p.set(x, y, z);
     return _m.compose(_p, _q, _s);
   };
@@ -115,6 +115,43 @@ export async function dressCity(scene, arena) {
     w.mesh.parent.add(inner);
   }
 
+  // ---- Floor slabs and roofs: a metal band around every edge (a cornice on roofs) ----
+  const SLAB = 0.35;
+  for (const sl of arena.slabs || []) {
+    const sides = [
+      { x: sl.cx, z: sl.cz - sl.d / 2, nx: 0, nz: -1, len: sl.w },
+      { x: sl.cx, z: sl.cz + sl.d / 2, nx: 0, nz: 1, len: sl.w },
+      { x: sl.cx - sl.w / 2, z: sl.cz, nx: -1, nz: 0, len: sl.d },
+      { x: sl.cx + sl.w / 2, z: sl.cz, nx: 1, nz: 0, len: sl.d },
+    ];
+    const band = sl.roof ? 0.55 : 0.45; // the roof band is deeper, like a cornice
+    for (const f of sides) {
+      const k = Math.max(1, Math.round(f.len / MODULE_W));
+      const sx = (f.len + 0.2) / (k * MODULE_W); // overlap the corners
+      const tx = f.nz;
+      const tz = -f.nx;
+      for (let i = 0; i < k; i++) {
+        const along = -(f.len + 0.2) / 2 + (i + 0.5) * MODULE_W * sx;
+        place('Cornice_Metal_Center', moduleMatrix(
+          f.x + tx * along + f.nx * 0.1, sl.y + 0.1 - band, f.z + tz * along + f.nz * 0.1, f.nx, f.nz, sx, band, 1,
+        ));
+      }
+    }
+  }
+
+  // ---- Ceiling lights: two fluorescent tubes under every slab ----
+  const tubes = [];
+  for (const sl of arena.slabs || []) {
+    for (const off of [-0.22, 0.22]) tubes.push([sl.cx + sl.w * off, sl.y - SLAB - 0.04, sl.cz]);
+  }
+
+  // ---- Rooftop AC units (their colliders come from arena.js) ----
+  for (const p of arena.rooftopProps || []) {
+    const S = 1.5;
+    const f = p.facing >= 0 ? 1 : -1;
+    place('Prop_ACUnit', moduleMatrix(p.x - f * 0.035 * S, p.y, p.z - f * 0.155 * S, 0, f, S, S, S));
+  }
+
   // ---- Street details: manholes in the open ground ----
   const r2 = rng(99);
   for (const p of arena.navPoints) {
@@ -139,6 +176,20 @@ export async function dressCity(scene, arena) {
       drawCalls++;
     }
   }
+  // Fluorescent tubes: a dark housing with a glowing (HDR, so it blooms) strip
+  if (tubes.length) {
+    const housing = new THREE.InstancedMesh(new THREE.BoxGeometry(1.5, 0.05, 0.16),
+      new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.6, metalness: 0.5 }), tubes.length);
+    const glow = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 0.03, 0.08),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.4, 2.1) }), tubes.length);
+    tubes.forEach(([x, y, z], i) => {
+      housing.setMatrixAt(i, _m.makeTranslation(x, y + 0.02, z));
+      glow.setMatrixAt(i, _m.makeTranslation(x, y - 0.01, z));
+    });
+    group.add(housing, glow);
+    drawCalls += 2;
+  }
+
   scene.add(group);
   return { group, drawCalls };
 }
