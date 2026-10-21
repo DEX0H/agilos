@@ -56,6 +56,10 @@ jobs:
           echo "TAG=v$version" >> "$GITHUB_ENV"
 
       - run: npm run build
+        env:
+          # Firebase web settings come from repository secrets, never from the code
+          VITE_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
 
       - name: Release notes
         shell: bash
