@@ -199,6 +199,9 @@ export async function dressCity(scene, arena) {
 const glass = new THREE.MeshStandardMaterial({ color: 0x1b2430, metalness: 0.9, roughness: 0.08 });
 function fixMaterial(m) {
   if (/glass/i.test(m.name)) return glass;
+  // The kit's vertex colours drive a wear shader in engines; as plain colours they turn
+  // some walls nearly black
+  m.vertexColors = false;
   m.side = THREE.FrontSide;
   if (m.transparent) { m.transparent = false; m.opacity = 1; }
   return m;
