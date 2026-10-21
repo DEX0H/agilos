@@ -88,7 +88,6 @@ export class Character {
     this.shieldTimer = SPAWN_SHIELD;
     this.sinceDamage = 0;
     this.hitStrength = 0;
-    if (this.onRespawn) this.onRespawn(); // e.g. refill weapons
   }
 
   get shielded() {
@@ -151,6 +150,9 @@ export class Character {
     this.height = STAND_H;
     this.eyeOff = STAND_H - EYE_BELOW_TOP;
     this.shieldTimer = SPAWN_SHIELD;
+    this.sinceDamage = 0;
+    this.hitStrength = 0;
+    if (this.onRespawn) this.onRespawn(); // e.g. refill weapons
   }
 
   // Timers that run every frame, alive or dead
