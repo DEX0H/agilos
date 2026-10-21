@@ -132,7 +132,8 @@ negligible. Revisit if the game moves to a host that supports headers.
 All rules run in the player's browser, so a determined player can change their own game
 (health, aim, speed). With bots only, this harms no one else. **Before real multiplayer
 ships, the server must be authoritative:** it should validate movement, hits, damage and
-the match state, and clients should only send inputs.
+the match state, and clients should only send inputs. The design is in
+[docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
 
 ## Things that were checked and found fine
 
@@ -146,23 +147,22 @@ the match state, and clients should only send inputs.
 - **Deploy workflow:**
   - It runs only on pushes to `main` and manual runs by people with write access. There
     are no `pull_request_target` triggers and no untrusted inputs in scripts.
-  - It uses only official `actions/*` actions.
+  - It uses only official `actions/*` actions, pinned to full commit SHAs.
   - Its permissions are minimal: `contents: read`, `pages: write`, `id-token: write`.
+- **CI workflow:** every pull request to `main` is built and checked with `npm audit`,
+  with read-only permissions and no access to deploy credentials.
 - **Asset licences:** all models are CC0 and the fonts are SIL OFL, both safe to
   redistribute.
 
 ## Recommendations
 
-These need repository-owner access in GitHub's settings:
-
-1. Turn on branch protection for `main`, requiring a pull request and blocking force
-   pushes. Force pushes were needed once for the email rewrite and should otherwise stay
-   off.
-2. Turn on Dependabot alerts and security updates.
-3. Pin the workflow's actions to full commit SHAs instead of version tags.
-4. Make sure two-factor authentication is on for the GitHub account.
-5. When multiplayer is added, design for an authoritative server and never trust client
-   reports of hits, damage or position.
+| # | Recommendation | Status |
+| --- | --- | --- |
+| 1 | Branch protection on `main`: changes go through a pull request, force pushes and branch deletion are blocked. | Done |
+| 2 | Dependabot alerts and security updates, plus weekly version updates for npm and the workflow actions ([`.github/dependabot.yml`](.github/dependabot.yml)). | Done |
+| 3 | Workflow actions pinned to full commit SHAs instead of version tags. | Done |
+| 4 | Two-factor authentication on the owner's GitHub account. | Open: the owner turns it on in GitHub's account settings |
+| 5 | Authoritative server for multiplayer: never trust client reports of hits, damage or position. | Designed in [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md), to follow when multiplayer is built |
 
 ## How to report a vulnerability
 
