@@ -73,7 +73,6 @@ const hitmarker = document.getElementById('hitmarker');
 const damageVignette = document.getElementById('damage');
 const deadMsg = document.getElementById('dead');
 const lockMsg = document.getElementById('lockmsg');
-const spreadRing = document.getElementById('spread');
 const feed = document.getElementById('feed');
 const banner = document.getElementById('banner');
 const shieldTint = document.getElementById('shieldtint');
@@ -195,16 +194,13 @@ function frame(now) {
   dust.update(t);
   postfx.grade.uniforms.uTime.value = t;
 
-  // Spread ring shows the real cone: radius in pixels = tan(spread) / tan(fov/2) * half screen height
-  if (active === weapon && player.locked && !player.dead) {
+  // Crosshair gap shows the real cone: pixels = tan(spread) / tan(fov/2) * half screen height
+  let gap = 4;
+  if (active === weapon && !player.dead) {
     const half = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    const px = Math.tan(weapon.currentSpread()) / half * (window.innerHeight / 2);
-    const d = Math.max(0, px * 2);
-    spreadRing.style.display = d > 4 ? 'block' : 'none';
-    spreadRing.style.width = spreadRing.style.height = `${d}px`;
-  } else {
-    spreadRing.style.display = 'none';
+    gap = 3 + Math.tan(weapon.currentSpread()) / half * (window.innerHeight / 2);
   }
+  crosshair.style.setProperty('--gap', `${Math.min(80, gap).toFixed(1)}px`);
 
   toastTimer = Math.max(0, toastTimer - dt);
   toast.style.opacity = String(Math.min(1, toastTimer * 2));

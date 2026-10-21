@@ -7,16 +7,21 @@
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
       canvas { display: block; }
+      /* Cross crosshair: four lines around a gap; the gap follows the real spread */
       #crosshair {
-        position: fixed; left: 50%; top: 50%; width: 6px; height: 6px;
-        margin: -3px 0 0 -3px; border-radius: 50%;
-        background: rgba(255,255,255,0.9); box-shadow: 0 0 2px #000; pointer-events: none;
+        position: fixed; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none;
+        --gap: 4px; --len: 8px; --thick: 2px;
       }
-      #spread {
-        position: fixed; left: 50%; top: 50%; width: 0; height: 0;
-        transform: translate(-50%, -50%); border-radius: 50%;
-        border: 1.5px solid rgba(255,255,255,0.55); pointer-events: none; display: none;
+      #crosshair i {
+        position: absolute; display: block; background: rgba(255,255,255,0.95);
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.55);
       }
+      #crosshair .t, #crosshair .b { width: var(--thick); height: var(--len); left: calc(var(--thick) / -2); }
+      #crosshair .l, #crosshair .r { height: var(--thick); width: var(--len); top: calc(var(--thick) / -2); }
+      #crosshair .t { bottom: var(--gap); }
+      #crosshair .b { top: var(--gap); }
+      #crosshair .l { right: var(--gap); }
+      #crosshair .r { left: var(--gap); }
       #hitmarker {
         position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
         color: #fff; font: 700 22px/1 system-ui, sans-serif; opacity: 0;
@@ -109,8 +114,7 @@
     </style>
   </head>
   <body>
-    <div id="crosshair"></div>
-    <div id="spread"></div>
+    <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i></div>
     <div id="hitmarker">×</div>
     <div id="damage"></div>
     <div id="dead">YOU DIED</div>
