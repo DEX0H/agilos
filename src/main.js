@@ -3,6 +3,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildArena } from './arena.js';
 import { Player } from './player.js';
 import { Handgun } from './weapon.js';
+import { Knife } from './knife.js';
 import { Enemies } from './enemies.js';
 import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
@@ -34,7 +35,21 @@ scene.add(camera); // the gun viewmodel is a child of the camera
 const { colliders } = buildArena(scene);
 const player = new Player(camera, colliders, new THREE.Vector3(0, 0, 14));
 const weapon = new Handgun(camera, scene, player);
+const knife = new Knife(camera, scene, player);
+let active = weapon;
 const enemies = new Enemies(scene, colliders);
+
+// 1 = handgun, 2 = knife. F flips the knife.
+function setWeapon(w) {
+  active = w;
+  weapon.model.visible = w === weapon;
+  knife.model.visible = w === knife;
+}
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Digit1') setWeapon(weapon);
+  if (e.code === 'Digit2') setWeapon(knife);
+  if (e.code === 'KeyF' && !e.repeat) knife.flip();
+});
 const dust = createDust(scene);
 const postfx = createPostFx(renderer, scene, camera);
 
@@ -57,7 +72,7 @@ document.addEventListener('pointerlockchange', () => {
 // Left click fires while the mouse is locked
 document.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !player.locked) return;
-  const r = weapon.fire(enemies, colliders);
+  const r = active.fire(enemies, colliders);
   if (r.hit) hitmarkerTimer = 0.15;
   if (r.kill) kills++;
 });
@@ -70,7 +85,7 @@ window.addEventListener('resize', () => {
 });
 
 // Debug handle for automated testing
-window.agilos = { player, weapon, enemies, renderer, scene, postfx, get kills() { return kills; } };
+window.agilos = { player, weapon, knife, setWeapon, enemies, renderer, scene, postfx, get kills() { return kills; } };
 
 let last = performance.now();
 function frame(now) {
@@ -80,6 +95,7 @@ function frame(now) {
 
   player.update(dt);
   weapon.update(dt);
+  knife.update(dt);
   enemies.update(dt, player);
 
   sky.position.copy(camera.position);
@@ -96,7 +112,7 @@ function frame(now) {
   const reloading = weapon.reloadTimer > 0;
   hud.textContent =
     `HP      ${Math.ceil(player.health)}\n` +
-    `AMMO    ${reloading ? 'RELOADING' : `${weapon.ammo}/${weapon.magSize}   reserve ${weapon.reserve}`}\n` +
+    `WEAPON  ${active === knife ? 'knife (F flip)' : `handgun  ${reloading ? 'RELOADING' : `${weapon.ammo}/${weapon.magSize}   reserve ${weapon.reserve}`}`}\n` +
     `KILLS   ${kills}   mobs alive ${enemies.aliveCount()}\n` +
     `speed   ${Math.hypot(v.x, v.z).toFixed(1)} m/s\n` +
     `vert    ${v.y.toFixed(1)} m/s\n` +
