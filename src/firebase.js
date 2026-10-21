@@ -16,7 +16,6 @@ export function firebase() {
     const app = initializeApp(firebaseConfig);
     const auth = A.initializeAuth(app, {
       persistence: [A.indexedDBLocalPersistence, A.browserLocalPersistence],
-      popupRedirectResolver: A.browserPopupRedirectResolver,
     });
     // Offline cache: finished matches queue up and upload when back online
     const db = F.initializeFirestore(app, { localCache: F.persistentLocalCache() });

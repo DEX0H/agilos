@@ -133,9 +133,10 @@ Nothing is built or signed on a personal machine.
 ## Privacy
 
 The game has no analytics or ads. Playing as a guest stores nothing outside your device.
-If you sign in (Google or email), Firebase (Google) stores your email address, your
-player name and colour, your settings and your match stats, in the EU (eur3). Only you
-can read them. "Delete account and stats" in the profile menu removes all of it.
+If you create an account, you only choose a username and a password (no email). Firebase
+(Google) stores your username, colour, settings and match stats, in the EU (eur3). Only
+you can read them. "Delete account and stats" in the profile menu removes all of it.
+Passwords can't be recovered, since there is no email to send a reset to.
 
 Apart from sign-in and stats, the browser version talks only to its own website. The
 Windows app also checks GitHub Releases (github.com) for updates at launch and every 20
