@@ -5,8 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agilos</title>
     <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
+      /* Fonts (bundled, SIL Open Font License): Teko for display, Rajdhani for everything else */
+      :root {
+        --font-display: 'Teko', 'Rajdhani', system-ui, sans-serif;
+        --font-ui: 'Rajdhani', system-ui, sans-serif;
+        --accent: #ff8a1f;
+        --accent-2: #ffc15a;
+        --panel: rgba(13, 15, 20, 0.86);
+        --line: rgba(255, 255, 255, 0.1);
+        --text: #f4efe8;
+        --muted: rgba(244, 239, 232, 0.62);
+      }
+      html, body {
+        margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--text);
+        font-family: var(--font-ui); font-weight: 500;
+      }
       canvas { display: block; }
+      button, select, input { font-family: var(--font-ui); }
+
+      /* ---------- In-game HUD ---------- */
       /* Cross crosshair: four lines around a gap; the gap follows the real spread */
       #crosshair {
         position: fixed; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none;
@@ -24,7 +41,7 @@
       #crosshair .r { left: var(--gap); }
       #hitmarker {
         position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
-        color: #fff; font: 700 22px/1 system-ui, sans-serif; opacity: 0;
+        color: #fff; font: 700 24px/1 var(--font-ui); opacity: 0;
         text-shadow: 0 0 3px #000; pointer-events: none;
       }
       #damage {
@@ -33,71 +50,41 @@
       }
       #dead {
         display: none; position: fixed; inset: 0; align-items: center; justify-content: center;
-        color: #ff5555; font: 700 44px system-ui, sans-serif; text-shadow: 0 2px 4px #000;
-        pointer-events: none;
+        color: #ff5a4a; font: 600 clamp(36px, 6vw, 64px)/1 var(--font-display); letter-spacing: 0.04em;
+        text-shadow: 0 2px 8px #000; pointer-events: none;
       }
       #banner {
-        display: none; position: fixed; left: 0; right: 0; top: 22%; justify-content: center;
+        display: none; position: fixed; left: 16px; right: 16px; top: 20%; justify-content: center;
         text-align: center; white-space: pre-line; color: #fff3e0;
-        font: 800 34px/1.35 system-ui, sans-serif; letter-spacing: 1px;
-        text-shadow: 0 2px 6px rgba(0,0,0,0.8); pointer-events: none;
+        font: 600 clamp(30px, 5vw, 56px)/1.05 var(--font-display); letter-spacing: 0.04em;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.85); pointer-events: none;
       }
       #hud {
-        position: fixed; left: 12px; top: 12px; color: #fff; font: 13px/1.4 ui-monospace, monospace;
-        text-shadow: 0 1px 2px #000; pointer-events: none; white-space: pre;
+        position: fixed; left: 14px; top: 12px; color: #fff; pointer-events: none; white-space: pre;
+        font: 600 clamp(12px, 1.1vw, 15px)/1.35 var(--font-ui); font-variant-numeric: tabular-nums;
+        letter-spacing: 0.02em; text-shadow: 0 1px 3px #000;
       }
       #feed {
         position: fixed; right: 14px; top: 12px; display: flex; flex-direction: column; gap: 4px;
-        align-items: flex-end; pointer-events: none; font: 600 13px/1.3 system-ui, sans-serif;
+        align-items: flex-end; pointer-events: none; font: 600 clamp(12px, 1.1vw, 15px)/1.3 var(--font-ui);
+        max-width: 60vw;
       }
       .feed-line {
-        background: rgba(0,0,0,0.45); color: #f1e7d8; padding: 3px 8px; border-radius: 3px;
-        transition: opacity 1s;
+        background: rgba(0,0,0,0.5); color: #f1e7d8; padding: 3px 9px; border-radius: 3px;
+        transition: opacity 1s; letter-spacing: 0.02em;
       }
-      .feed-line.mine { background: rgba(160,60,20,0.6); color: #fff; }
+      .feed-line.mine { background: rgba(170,70,20,0.65); color: #fff; }
       .feed-line.fade { opacity: 0; }
-      #overlay {
-        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-        background: rgba(0,0,0,0.55); color: #fff; text-align: center; pointer-events: none;
-      }
-      #overlay h1 { margin: 0 0 12px; font-size: 32px; }
-      #overlay p { margin: 4px 0; opacity: 0.85; }
-      #overlay > div { max-height: 100vh; overflow: auto; padding: 16px; box-sizing: border-box; }
-      #overlay .cta { font-weight: 700; opacity: 1; margin: 10px 0; }
-      #controlstext { max-width: 760px; margin: 6px auto 12px !important; font-size: 13px; }
-      #settings {
-        pointer-events: auto; text-align: left; margin: 10px auto 0; max-width: 460px;
-        background: rgba(12,14,18,0.82); border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 8px; padding: 12px 16px 14px; font-size: 13px;
-      }
-      #settings h2 { margin: 0 0 8px; font-size: 15px; letter-spacing: 0.5px; }
-      #settings .row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
-      #settings .row label { flex: 0 0 140px; opacity: 0.85; }
-      #settings select, #settings .sens-num {
-        background: #1d2128; color: #fff; border: 1px solid #3a404a; border-radius: 4px; padding: 3px 6px;
-      }
-      #settings .sens-num { width: 64px; }
-      #settings input[type=range] { flex: 1; min-width: 0; }
-      #settings .binds {
-        display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; margin-top: 10px;
-      }
-      #settings .binds button, #settings .reset {
-        background: #262b33; color: #fff; border: 1px solid #434a55; border-radius: 4px;
-        padding: 3px 10px; min-width: 78px; font: 600 12px ui-monospace, monospace; cursor: pointer;
-      }
-      #settings .binds button:hover, #settings .reset:hover { background: #313741; }
-      #settings .binds button.waiting { background: #7a4a14; border-color: #c27a2a; }
-      #settings .reset { margin-top: 12px; }
       #shieldtint {
         position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s;
         box-shadow: inset 0 0 90px rgba(90,170,255,0.45);
       }
       #hpwrap {
-        position: fixed; left: 18px; bottom: 18px; display: flex; align-items: center; gap: 10px;
+        position: fixed; left: 18px; bottom: 18px; display: flex; align-items: center; gap: 12px;
         pointer-events: none;
       }
       #hpbar {
-        position: relative; width: 260px; height: 16px; background: rgba(0,0,0,0.55);
+        position: relative; width: clamp(160px, 22vw, 280px); height: 16px; background: rgba(0,0,0,0.55);
         border: 1px solid rgba(255,255,255,0.25); border-radius: 3px; overflow: hidden;
         transform: skewX(-12deg);
       }
@@ -106,11 +93,115 @@
         position: absolute; inset: 0; background: linear-gradient(90deg, rgba(90,170,255,0.55), rgba(150,210,255,0.35));
         opacity: 0; transition: opacity 0.3s;
       }
-      #hpnum { color: #fff; font: 800 20px/1 system-ui, sans-serif; text-shadow: 0 1px 3px #000; min-width: 44px; }
+      #hpnum {
+        color: #fff; font: 600 30px/1 var(--font-display); text-shadow: 0 1px 4px #000; min-width: 48px;
+        font-variant-numeric: tabular-nums;
+      }
       #toast {
         position: fixed; left: 50%; top: 62%; transform: translateX(-50%); pointer-events: none;
-        color: #fff; font: 700 16px system-ui, sans-serif; text-shadow: 0 1px 3px #000; opacity: 0;
+        color: #fff; font: 700 18px var(--font-ui); text-shadow: 0 1px 3px #000; opacity: 0;
       }
+
+      /* ---------- Menu (start / pause) ---------- */
+      #overlay {
+        position: fixed; inset: 0; display: flex; overflow: auto; box-sizing: border-box;
+        padding: clamp(12px, 3vw, 40px);
+        background:
+          radial-gradient(ellipse at 20% 30%, rgba(255,138,31,0.16), transparent 55%),
+          linear-gradient(180deg, rgba(5,7,10,0.72), rgba(5,7,10,0.86));
+        backdrop-filter: blur(4px);
+        scrollbar-width: none;            /* Firefox: no scrollbar */
+        cursor: pointer;
+      }
+      #overlay::-webkit-scrollbar { display: none; }  /* Chrome, Safari, Edge */
+      .menu {
+        margin: auto; width: min(1040px, 100%);
+        display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
+        gap: clamp(20px, 4vw, 56px); align-items: center;
+      }
+      @media (max-width: 860px) {
+        .menu { grid-template-columns: 1fr; }
+      }
+
+      .intro { min-width: 0; }
+      .brand {
+        font: 600 clamp(64px, 11vw, 132px)/0.82 var(--font-display); letter-spacing: 0.05em;
+        background: linear-gradient(180deg, #fff 0%, #ffd9a8 55%, var(--accent) 100%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: drop-shadow(0 4px 18px rgba(255,120,30,0.25));
+      }
+      .tagline {
+        margin: 6px 0 0; color: var(--muted); text-transform: uppercase;
+        font: 600 clamp(13px, 1.3vw, 16px)/1.3 var(--font-ui); letter-spacing: 0.18em;
+      }
+      .play {
+        display: inline-flex; align-items: center; gap: 12px; margin: clamp(18px, 3vh, 30px) 0 6px;
+        padding: 12px 30px 10px; border-radius: 4px; color: #1b0e03;
+        background: linear-gradient(180deg, var(--accent-2), var(--accent));
+        font: 600 clamp(26px, 3vw, 34px)/1 var(--font-display); letter-spacing: 0.08em;
+        box-shadow: 0 8px 30px rgba(255,120,30,0.35), inset 0 1px 0 rgba(255,255,255,0.5);
+        clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+      }
+      .play-sub { margin: 0; color: var(--muted); font: 500 14px/1.4 var(--font-ui); }
+      .hints {
+        display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: clamp(16px, 3vh, 28px);
+        font: 600 14px/1.2 var(--font-ui); color: var(--muted);
+      }
+      .hint { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+      .hint span { margin-left: 3px; }
+      kbd, .keycap {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-width: 24px; height: 24px; padding: 0 7px; box-sizing: border-box;
+        border-radius: 5px; color: #fff; background: linear-gradient(180deg, #343a45, #232831);
+        border: 1px solid #4c5462; border-bottom-width: 3px;
+        font: 700 13px/1 var(--font-ui); letter-spacing: 0.03em;
+      }
+      #lockmsg {
+        display: none; margin: 16px 0 0; padding: 10px 12px; border-radius: 6px;
+        background: rgba(170,40,30,0.25); border: 1px solid rgba(255,110,90,0.35); color: #ffd2c8;
+        font: 600 14px/1.4 var(--font-ui);
+      }
+
+      /* Settings panel */
+      .panel {
+        min-width: 0; cursor: default; box-sizing: border-box;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+        padding: clamp(14px, 2vw, 22px); box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+      }
+      .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+      .panel h2 {
+        margin: 0; font: 600 30px/1 var(--font-display); letter-spacing: 0.06em; color: #fff;
+      }
+      .panel-section { display: grid; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+      .field { display: grid; grid-template-columns: 110px minmax(0, 1fr); align-items: center; gap: 12px; }
+      .field-name { color: var(--muted); font: 600 15px var(--font-ui); text-transform: uppercase; letter-spacing: 0.08em; }
+      .panel select, .sens-num {
+        height: 32px; box-sizing: border-box; background: #1b1f26; color: #fff;
+        border: 1px solid #3a414c; border-radius: 6px; padding: 0 10px; font-size: 15px; font-weight: 600;
+      }
+      .panel select { width: 100%; cursor: pointer; }
+      .sens { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      .sens input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+      .sens-num { width: 72px; padding: 0 6px; }
+      .section-title {
+        display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px;
+        margin: 14px 0 8px; color: #fff; font: 600 22px/1 var(--font-display); letter-spacing: 0.06em;
+      }
+      .section-hint { color: var(--muted); font: 500 13px var(--font-ui); letter-spacing: 0.02em; }
+      .binds { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 2px 18px; }
+      .bind {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); min-width: 0;
+      }
+      .bind-name { font: 600 15px/1.2 var(--font-ui); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .keycap { min-width: 64px; cursor: pointer; flex: 0 0 auto; }
+      .keycap:hover { border-color: #7a8494; }
+      .keycap.waiting { background: linear-gradient(180deg, #a25a17, #7a4210); border-color: var(--accent-2); }
+      .ghost {
+        background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
+        padding: 5px 12px; font: 700 13px var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
+      }
+      .ghost:hover { color: #fff; border-color: rgba(255,255,255,0.3); }
     </style>
   </head>
   <body>
@@ -128,16 +219,19 @@
     <div id="hud"></div>
     <div id="feed"></div>
     <div id="overlay">
-      <div>
-        <h1>Agilos</h1>
-        <p>Battle royale · you and 4 bots · last one standing wins · stay inside the zone</p>
-        <p class="cta">Click anywhere outside the panel to play</p>
-        <p id="controlstext"></p>
-        <div id="settings"></div>
-        <p id="lockmsg" style="display:none;color:#ffb3b3;max-width:520px;margin:14px auto 0">
-          Your browser blocked mouse lock. This usually happens in an embedded preview.
-          Open the game in its own browser tab, then click again.
-        </p>
+      <div class="menu">
+        <section class="intro">
+          <div class="brand">AGILOS</div>
+          <p class="tagline">Battle royale · you vs 4 bots · last one standing</p>
+          <div class="play">CLICK TO PLAY</div>
+          <p class="play-sub">Click anywhere outside the settings panel. Stay inside the zone.</p>
+          <div id="controlstext" class="hints"></div>
+          <p id="lockmsg">
+            Your browser blocked mouse lock. This usually happens in an embedded preview.
+            Open the game in its own browser tab, then click again.
+          </p>
+        </section>
+        <section id="settings" class="panel"></section>
       </div>
     </div>
     <script type="module" src="/src/main.js"></script>

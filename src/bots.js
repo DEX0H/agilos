@@ -54,23 +54,37 @@ function approach(cur, target, maxStep) {
   return cur + Math.max(-maxStep, Math.min(maxStep, d));
 }
 
-function makeNameTag(text) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
+const TAG_FONT = '700 38px Rajdhani, system-ui, sans-serif';
+
+function drawNameTag(canvas, text) {
   const ctx = canvas.getContext('2d');
-  ctx.font = 'bold 34px system-ui, sans-serif';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = TAG_FONT;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 6;
   ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-  ctx.strokeText(text, 128, 32);
+  ctx.strokeText(text.toUpperCase(), 128, 34);
   ctx.fillStyle = '#ffe6c2';
-  ctx.fillText(text, 128, 32);
+  ctx.fillText(text.toUpperCase(), 128, 34);
+}
+
+function makeNameTag(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  drawNameTag(canvas, text);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
   sprite.scale.set(1.2, 0.3, 1);
+  // The web font may still be loading: redraw once it is ready
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load(TAG_FONT).then(() => {
+      drawNameTag(canvas, text);
+      tex.needsUpdate = true;
+    }).catch(() => {});
+  }
   return sprite;
 }
 

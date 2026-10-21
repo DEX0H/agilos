@@ -1,3 +1,9 @@
+// Fonts, bundled with the game (SIL Open Font License): Teko for display, Rajdhani for UI
+import '@fontsource/teko/latin-500.css';
+import '@fontsource/teko/latin-600.css';
+import '@fontsource/rajdhani/latin-500.css';
+import '@fontsource/rajdhani/latin-600.css';
+import '@fontsource/rajdhani/latin-700.css';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildArena } from './arena.js';
