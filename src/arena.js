@@ -1,13 +1,12 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { getTexture } from './textures.js';
+import { surface, worldUVs } from './materials.js';
 import { SUN_DIR } from './sky.js';
 
 // Vertical city block: 60 x 60 m, nine open-sided buildings of 1 to 4 stories,
 // external stairs, bridges between floors and rooftops, jumpable gaps between roofs.
 // Every solid is an axis-aligned box that is both rendered and used for collision.
 
-const TILE = 4;                 // metres per texture tile
 const STORY = 3.0;              // floor-to-floor height
 const SLAB = 0.35;              // floor slab thickness
 const STEP_RISE = 0.5;          // below the 0.55 m auto step-up
@@ -23,21 +22,17 @@ const TRIM_COLOR = new THREE.Color(2.2, 0.9, 0.3); // HDR so it blooms slightly
 const TRIM_W = 0.08;
 const SIDE_ORDER = ['N', 'E', 'S', 'W'];
 
-const matCache = new Map();
+// Old surface names map onto the real textures; colours become a light tint
+const KIND_SURFACE = { concrete: 'floor', concrete_wall: 'concrete', ground: 'asphalt', metal: 'rust', wood: 'planks' };
+const WHITE = new THREE.Color(1, 1, 1);
 function material(kind, color) {
-  const key = kind + color.getHexString();
-  if (!matCache.has(key)) {
-    const tex = getTexture(kind);
-    matCache.set(key, new THREE.MeshStandardMaterial({
-      map: tex,
-      bumpMap: tex,
-      bumpScale: 0.4,
-      color,
-      roughness: 0.85,
-      metalness: kind === 'metal' ? 0.35 : 0.05,
-    }));
-  }
-  return matCache.get(key);
+  const s = KIND_SURFACE[kind] || kind;
+  // Quantise the tint so similar colours share one material
+  const t = WHITE.clone().lerp(color, 0.3);
+  t.r = Math.round(t.r * 20) / 20;
+  t.g = Math.round(t.g * 20) / 20;
+  t.b = Math.round(t.b * 20) / 20;
+  return surface(s, t);
 }
 const trimMat = new THREE.MeshBasicMaterial({ color: TRIM_COLOR });
 
@@ -77,12 +72,12 @@ export function buildArena(scene) {
     // Rounded edges catch light; the collider stays the exact box
     const radius = Math.min(0.15, w / 3, h / 3, d / 3);
     const geom = new RoundedBoxGeometry(w, h, d, 3, radius);
-    const uv = geom.attributes.uv;
-    const s = Math.max(w, h, d) / TILE;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * s, uv.getY(i) * s);
+    const centre = new THREE.Vector3(x, bottomY + h / 2, z);
+    const mat = material(kind, c);
+    worldUVs(geom, centre, KIND_SURFACE[kind] || kind);
 
-    const mesh = new THREE.Mesh(geom, material(kind, c));
-    mesh.position.set(x, bottomY + h / 2, z);
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.copy(centre);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -154,7 +149,8 @@ export function buildArena(scene) {
   function wallChunk(b, side, baseY, topY) {
     const cx = (b.x0 + b.x1) / 2;
     const cz = (b.z0 + b.z1) / 2;
-    const opts = { bottomY: baseY, color: wallColor };
+    // Brick on most buildings, painted plaster on some, for variety
+    const opts = { bottomY: baseY, color: wallColor, kind: (Math.round(b.x0 + b.z0) & 2) ? 'plaster' : 'brick' };
     if (side === 'N') block((cx + b.x1) / 2, b.z0 + WALL_T / 2, b.x1 - cx, WALL_T, topY, opts);
     if (side === 'E') block(b.x1 - WALL_T / 2, (cz + b.z1) / 2, WALL_T, b.z1 - cz, topY, opts);
     if (side === 'S') block((b.x0 + cx) / 2, b.z1 - WALL_T / 2, cx - b.x0, WALL_T, topY, opts);
@@ -172,7 +168,7 @@ export function buildArena(scene) {
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         block(cx + sx * (w / 2 - PILLAR / 2), cz + sz * (d / 2 - PILLAR / 2), PILLAR, PILLAR, roof,
-          { color: pillarColor });
+          { color: pillarColor, kind: 'concrete_wall' });
       }
     }
 
@@ -203,16 +199,16 @@ export function buildArena(scene) {
   // Perimeter walls, tall enough that the tower roof can't see over them
   const wallTop = 16;
   const perimeter = new THREE.Color(0x7d8590);
-  block(0, -30, 60, 1, wallTop, { kind: 'metal', color: perimeter });
-  block(0, 30, 60, 1, wallTop, { kind: 'metal', color: perimeter });
-  block(-30, 0, 1, 60, wallTop, { kind: 'metal', color: perimeter });
-  block(30, 0, 1, 60, wallTop, { kind: 'metal', color: perimeter });
+  block(0, -30, 60, 1, wallTop, { kind: 'corrugated', color: perimeter });
+  block(0, 30, 60, 1, wallTop, { kind: 'corrugated', color: perimeter });
+  block(-30, 0, 1, 60, wallTop, { kind: 'corrugated', color: perimeter });
+  block(30, 0, 1, 60, wallTop, { kind: 'corrugated', color: perimeter });
 
   // Wall-jump chimneys: a free wall 1.4 m from the perimeter wall in the west and east
   // streets. Kick back and forth to climb to 9 m.
   const chimney = new THREE.Color(0x8a8f99);
-  block(-27.9, -7.5, 0.4, 5, 9, { kind: 'metal', color: chimney, trim: true });
-  block(27.9, 7.5, 0.4, 5, 9, { kind: 'metal', color: chimney, trim: true });
+  block(-27.9, -7.5, 0.4, 5, 9, { kind: 'concrete_wall', color: chimney, trim: true });
+  block(27.9, 7.5, 0.4, 5, 9, { kind: 'concrete_wall', color: chimney, trim: true });
 
   // ---- Buildings ----
   // Centre tower, 4 stories (roof 12 m). Wall sides chosen to keep bridges and stairs clear.

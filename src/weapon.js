@@ -119,7 +119,7 @@ export class Firearm {
     this.drawTimer = DRAW_TIME;
     this.zoom = 0;
     this.pistol.visible = spec.model === 'pistol';
-    this.mag = null;
+    this.entry = null;
     for (const m of Object.values(this.boxModels)) m.object.visible = false;
     if (spec.model === 'pistol') {
       this.current = this.pistol;
@@ -135,10 +135,12 @@ export class Firearm {
       entry.object.traverse((o) => { if (o.isMesh) o.castShadow = false; });
       this.model.add(entry.object);
       this.boxModels[spec.model] = entry;
+      // The real model replaced the simple one: move the muzzle if this gun is out
+      entry.listeners.push((e) => { if (this.entry === e) this.attachMuzzle(e.object, e.muzzle); });
     }
     entry.object.visible = true;
     this.current = entry.object;
-    this.mag = entry.mag;
+    this.entry = entry;
     this.attachMuzzle(entry.object, entry.muzzle);
   }
 
@@ -200,12 +202,13 @@ export class Firearm {
     // Magazine: out by 45%, back in by 75%
     const drop = reloading ? (p < 0.45 ? ss(p, 0.12, 0.45) : 1 - ss(p, 0.45, 0.75)) : 0;
     const pistol = g.spec.model === 'pistol';
-    const mag = pistol ? this.pistolMag : this.mag;
+    const e = this.entry;
+    const mag = pistol ? this.pistolMag : e && e.mag;
     if (!mag) return;
-    if (pistol) {
-      // The pistol model has its own magazine; this one shows only while it is out of the grip
+    if (pistol || e.fakeMag) {
+      // The real models have their own magazine; this one shows only while it is out of the gun
       mag.visible = reloading && drop > 0.08;
-      mag.position.copy(this.pistolMagHome);
+      mag.position.copy(pistol ? this.pistolMagHome : e.magHome);
       mag.position.y -= 0.25 * drop;
     } else {
       mag.position.set(0, -0.32 * drop, 0.04 * drop);

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RARITY_COLORS } from './gun.js';
+import { loadPistol, normalizeGun } from './models.js';
 
 // Low-poly models for the mystery box weapons, built from primitives so they need no
 // downloads. Same convention as normalizeGun(): metres, barrel along -Z, origin where
@@ -112,10 +113,55 @@ function sniper(g, m, accent) {
 
 const BUILDERS = { smg, rifle, sniper };
 
+// Real models (Quaternius Ultimate Gun Pack, CC0) that replace the primitive ones once
+// loaded: [file, length in metres]. Their magazines aren't separate parts, so the reload
+// shows a stand-in magazine dropping out below the gun and a new one going in.
+const FBX_MODELS = {
+  smg: ['SubmachineGun_3', 0.62],
+  rifle: ['AssaultRifle2_1', 0.95],
+  sniper: ['SniperRifle_2', 1.35],
+};
+// Stand-in magazine: size and where it sits relative to the grip
+const FAKE_MAGS = {
+  smg: [[0.03, 0.17, 0.05], [0, -0.1, -0.1], 0.05],
+  rifle: [[0.032, 0.18, 0.07], [0, -0.1, -0.15], 0.2],
+  sniper: [[0.035, 0.08, 0.08], [0, -0.06, -0.14], 0],
+};
+
+// Returns { object, muzzle, mag, fakeMag, listeners }. `object` is a container: it starts
+// with the primitive model and swaps in the real one when it arrives, then calls each
+// function in `listeners` so holders can move their muzzle point.
 export function buildGunModel(spec) {
   const m = materials();
   const group = new THREE.Group();
+  const proc = new THREE.Group();
+  group.add(proc);
   const accent = m.accent[spec.rarity] || m.accent.common;
-  const muzzle = BUILDERS[spec.model](group, m, accent);
-  return { object: group, muzzle, mag: group.getObjectByName('mag') };
+  const muzzle = BUILDERS[spec.model](proc, m, accent);
+  const entry = { object: group, muzzle, mag: proc.getObjectByName('mag'), fakeMag: false, magHome: null, listeners: [] };
+
+  const def = FBX_MODELS[spec.model];
+  if (def) {
+    loadPistol(def[0]).then((src) => {
+      const { object, muzzle: mz } = normalizeGun(src, def[1]);
+      group.add(object);
+      proc.visible = false;
+      // Thin rarity stripe along the left side so the colour still reads
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.012, def[1] * 0.3), accent);
+      stripe.position.set(-0.03, 0.0, -def[1] * 0.2);
+      group.add(stripe);
+      const [size, pos, tilt] = FAKE_MAGS[spec.model];
+      const mag = new THREE.Mesh(box(...size, 0.006), m.dark);
+      mag.position.set(...pos);
+      mag.rotation.x = tilt;
+      mag.visible = false;
+      group.add(mag);
+      entry.muzzle.copy(mz);
+      entry.mag = mag;
+      entry.fakeMag = true;
+      entry.magHome = mag.position.clone();
+      for (const fn of entry.listeners) fn(entry);
+    }).catch((e) => console.warn(`Gun model ${def[0]} failed to load; keeping the simple one`, e));
+  }
+  return entry;
 }

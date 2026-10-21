@@ -74,7 +74,20 @@ export function normalizeGun(source, length) {
   for (const p of pts) if (p.y < gripCut) { gripSum += p[long]; gripN++; }
   const grip = gripN ? gripSum / gripN : (box.min[long] + box.max[long]) / 2;
   const centre = (box.min[long] + box.max[long]) / 2;
-  const muzzleSign = grip < centre ? 1 : -1; // muzzle is on the side away from the grip
+  // The muzzle is the thin end (barrel) rather than the tall end (stock, grip, slide back).
+  // If both ends are about as tall, it is the end away from the grip.
+  const endHeight = (lo, hi) => {
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const p of pts) if (p[long] >= lo && p[long] <= hi) { y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+    return y1 > y0 ? y1 - y0 : 0;
+  };
+  const cap = size[long] * 0.08;
+  const hMin = endHeight(box.min[long], box.min[long] + cap);
+  const hMax = endHeight(box.max[long] - cap, box.max[long]);
+  let muzzleSign;
+  if (Math.abs(hMin - hMax) > 0.15 * Math.max(hMin, hMax)) muzzleSign = hMax < hMin ? 1 : -1;
+  else muzzleSign = grip < centre ? 1 : -1;
 
   // Rotate so the muzzle direction maps to -Z
   const turn = new THREE.Group();
