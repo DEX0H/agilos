@@ -10,8 +10,8 @@ const ALERT_TIME = 4;          // keeps chasing this long after losing sight
 const CHASE_SPEED = 4.2;
 const WANDER_SPEED = 1.6;
 const ATTACK_RANGE = 1.8;
-const ATTACK_DAMAGE = 10;
-const ATTACK_COOLDOWN = 1.0;
+const ATTACK_DAMAGE = 7;
+const ATTACK_COOLDOWN = 1.2;
 const RESPAWN_DELAY = 6;
 const ARENA_LIMIT = 28;        // keep mobs inside the walls
 

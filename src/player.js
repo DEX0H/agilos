@@ -38,6 +38,8 @@ export class Player {
     this.dead = false;
     this.respawnTimer = 0;
     this.damageFlash = 0;
+    this.recoilPitch = 0;
+    this.recoilYaw = 0;
 
     this.keys = new Set();
     this.jumpQueued = false;
@@ -82,9 +84,10 @@ export class Player {
     }
   }
 
+  // Recoil is a visual offset on the camera that decays back, so aim is not permanently moved.
   addRecoil(pitch, yaw) {
-    this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch + pitch));
-    this.yaw += yaw;
+    this.recoilPitch += pitch;
+    this.recoilYaw += yaw;
   }
 
   respawn() {
@@ -97,6 +100,9 @@ export class Player {
 
   update(dt) {
     this.damageFlash = Math.max(0, this.damageFlash - dt);
+    const recoilDecay = Math.exp(-10 * dt);
+    this.recoilPitch *= recoilDecay;
+    this.recoilYaw *= recoilDecay;
 
     if (this.dead) {
       this.velocity.set(0, 0, 0);
@@ -207,6 +213,6 @@ export class Player {
   updateCamera() {
     const p = this.position;
     this.camera.position.set(p.x, p.y + EYE, p.z);
-    this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.camera.rotation.set(this.pitch + this.recoilPitch, this.yaw + this.recoilYaw, 0);
   }
 }
