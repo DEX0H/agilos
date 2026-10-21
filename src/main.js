@@ -7,6 +7,7 @@ import '@fontsource/rajdhani/latin-700.css';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildArena } from './arena.js';
+import { dressCity } from './city.js';
 import { Player } from './player.js';
 import { Firearm } from './weapon.js';
 import { HANDGUN, RARITY_COLORS } from './gun.js';
@@ -56,7 +57,10 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 scene.add(camera); // the gun viewmodel is a child of the camera
 
 // ---- Game world ----
-const { colliders, playerSpawn, mobSpawns, navPoints, navLinks, navJumps } = buildArena(scene);
+const arena = buildArena(scene);
+const { colliders, playerSpawn, mobSpawns, navPoints, navLinks, navJumps } = arena;
+// City facades and details load in the background; the plain boxes show until then
+dressCity(scene, arena).catch((e) => console.warn('City dressing failed to load; keeping plain walls', e));
 const world = new World(scene, colliders);
 const player = new Player(camera, colliders, playerSpawn);
 world.add(player);

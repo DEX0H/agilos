@@ -12,6 +12,10 @@ All models are by Quaternius (https://quaternius.com), released under CC0 1.0
 - `guns/*.fbx` (pistols, `SubmachineGun_3`, `AssaultRifle2_1`, `SniperRifle_2`): Ultimate Gun Pack (50+ LowPoly Guns),
   https://quaternius.itch.io/50-lowpoly-guns. Unmodified.
 
+- `city.glb`: Downtown City MegaKit (Standard), https://quaternius.itch.io/downtown-city-megakit.
+  12 facade and prop pieces merged into one GLB, textures resized to 1024 px WebP, meshopt
+  compressed.
+
 # Texture credits
 
 `public/textures/*.webp` are from Poly Haven (https://polyhaven.com), CC0 1.0: concrete_wall_003,
