@@ -16,9 +16,9 @@ const SCOPE_SPEED = 12;         // how fast the scope zooms in and out
 
 // Where each model sits inside the viewmodel group (longer guns sit farther back)
 const VIEW_OFFSETS = {
-  smg: { pos: new THREE.Vector3(-0.03, -0.01, 0.02), scale: 0.8 },
-  rifle: { pos: new THREE.Vector3(-0.03, -0.01, 0.04), scale: 0.72 },
-  sniper: { pos: new THREE.Vector3(-0.03, -0.02, 0.08), scale: 0.66 },
+  smg: { pos: new THREE.Vector3(-0.02, 0, -0.02), scale: 0.72 },
+  rifle: { pos: new THREE.Vector3(-0.02, 0, -0.02), scale: 0.62 },
+  sniper: { pos: new THREE.Vector3(-0.02, -0.01, 0), scale: 0.56 },
 };
 
 const _origin = new THREE.Vector3();
@@ -190,11 +190,12 @@ export class Firearm {
     const pose = reloading ? Math.min(ss(p, 0, 0.15), 1 - ss(p, 0.86, 1)) : 0;
     const slap = reloading ? Math.max(0, 1 - Math.abs(p - 0.76) / 0.05) : 0; // jolt when the mag seats
 
-    this.model.rotation.x = 0.28 * pose + 0.6 * draw - 0.08 * slap;
-    this.model.rotation.z = 0.55 * pose;
-    this.model.rotation.y = -0.05 + 0.18 * pose;
-    this.model.position.x = 0.24 - 0.05 * pose;
-    this.model.position.y += 0.015 * slap - 0.03 * pose;
+    // Muzzle up, rolled so the right side and the magazine well face you, raised into view
+    this.model.rotation.x = 0.32 * pose + 0.6 * draw - 0.08 * slap;
+    this.model.rotation.z = 0.5 * pose;
+    this.model.rotation.y = -0.05 + 0.1 * pose;
+    this.model.position.x = 0.24 - 0.08 * pose;
+    this.model.position.y += 0.015 * slap + 0.07 * pose;
 
     // Magazine: out by 45%, back in by 75%
     const drop = reloading ? (p < 0.45 ? ss(p, 0.12, 0.45) : 1 - ss(p, 0.45, 0.75)) : 0;
