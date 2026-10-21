@@ -137,7 +137,7 @@ class MysteryBox {
     this.beam = beam;
     this.group.add(beam);
     // Marquee bulbs around the top edge of the box, one instanced mesh, colours per bulb
-    this.bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.022, 8, 6), new THREE.MeshBasicMaterial(), BULBS);
+    this.bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.032, 8, 6), new THREE.MeshBasicMaterial(), BULBS);
     const perim = 2 * (LEN + DEP);
     for (let i = 0; i < BULBS; i++) {
       let d = (i / BULBS) * perim;
@@ -299,9 +299,10 @@ class MysteryBox {
 
     // "?" panels glow in the rarity colour during a roll
     const pe = this.panelMat.emissive;
-    if (rarity && (st === 'spinning' || st === 'showing')) pe.lerp(rarity, Math.min(1, dt * 20));
+    const rolling = rarity && (st === 'spinning' || st === 'showing');
+    if (rolling) pe.copy(rarity);
     else pe.lerp(st === 'cooldown' ? BEAM_USED : _c.setRGB(1, 1, 1), Math.min(1, dt * 5));
-    this.panelMat.emissiveIntensity = st === 'cooldown' ? 0.5 : 1.2;
+    this.panelMat.emissiveIntensity = st === 'cooldown' ? 0.5 : rolling ? 0.9 : 1.2;
 
     // Bulbs: lazy twinkle when ready, a fast chase in rarity colours while spinning,
     // all flashing the result's colour when it lands, dark while recharging
