@@ -362,6 +362,7 @@ export class Bot extends Character {
       entry.object.scale.setScalar(0.85);
       this.gunHolder.add(entry.object);
       this.heldModels[kind] = entry;
+      entry.listeners.push((e) => { if (this.muzzle.parent === e.object) this.muzzle.position.copy(e.muzzle); });
     }
     for (const [k, e] of Object.entries(this.heldModels)) e.object.visible = k === kind;
     this.muzzle.removeFromParent();
