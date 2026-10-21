@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { getTexture } from './textures.js';
 import { SUN_DIR } from './sky.js';
 
@@ -54,7 +55,9 @@ export function buildArena(scene) {
   function block(x, z, w, d, top, { bottomY = 0, color, kind = 'concrete', trim = false } = {}) {
     const h = top - bottomY;
     const c = color ?? LOW.clone().lerp(HIGH, Math.min(top / MAX_HEIGHT, 1));
-    const geom = new THREE.BoxGeometry(w, h, d);
+    // Rounded edges catch light; the collider stays the exact box
+    const radius = Math.min(0.15, w / 3, h / 3, d / 3);
+    const geom = new RoundedBoxGeometry(w, h, d, 3, radius);
 
     // Scale UVs so the texture tile is TILE metres on every face
     const uv = geom.attributes.uv;
@@ -69,7 +72,7 @@ export function buildArena(scene) {
 
     if (trim && top >= MIN_TRIM_HEIGHT) {
       const slab = new THREE.Mesh(
-        new THREE.BoxGeometry(w - 0.02, 0.04, d - 0.02),
+        new RoundedBoxGeometry(w - 0.02, 0.04, d - 0.02, 2, 0.015),
         new THREE.MeshBasicMaterial({ color: TRIM_COLOR }),
       );
       slab.position.set(x, top + 0.02, z);

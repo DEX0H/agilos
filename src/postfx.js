@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 
 // Color grade: desaturate, add contrast, split-tone (cool shadows, warm highlights),
 // subtle chromatic aberration at the edges, vignette and film grain. Written for this project.
@@ -74,6 +75,12 @@ export function createPostFx(renderer, scene, camera) {
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
 
+  // Ground-truth ambient occlusion: darkens corners, stair joins and crate contacts
+  const gtao = new GTAOPass(scene, camera, size.x * pr, size.y * pr);
+  gtao.output = GTAOPass.OUTPUT.Default;
+  gtao.blendIntensity = 0.9;
+  composer.addPass(gtao);
+
   const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.4, 0.5, 0.9);
   composer.addPass(bloom);
 
@@ -91,6 +98,7 @@ export function createPostFx(renderer, scene, camera) {
     composer.setSize(w, h);
     bloom.setSize(w * p, h * p);
     smaa.setSize(w * p, h * p);
+    gtao.setSize(w * p, h * p);
   }
 
   return { composer, bloom, grade, resize };
