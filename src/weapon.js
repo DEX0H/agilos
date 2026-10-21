@@ -16,9 +16,9 @@ const SCOPE_SPEED = 12;         // how fast the scope zooms in and out
 
 // Where each model sits inside the viewmodel group (longer guns sit farther back)
 const VIEW_OFFSETS = {
-  smg: new THREE.Vector3(-0.02, -0.02, 0.1),
-  rifle: new THREE.Vector3(-0.02, -0.02, 0.2),
-  sniper: new THREE.Vector3(-0.02, -0.03, 0.3),
+  smg: { pos: new THREE.Vector3(-0.03, -0.01, 0.02), scale: 0.8 },
+  rifle: { pos: new THREE.Vector3(-0.03, -0.01, 0.04), scale: 0.72 },
+  sniper: { pos: new THREE.Vector3(-0.03, -0.02, 0.08), scale: 0.66 },
 };
 
 const _origin = new THREE.Vector3();
@@ -81,6 +81,13 @@ export class Firearm {
     this.pistol.add(slide, barrel, frame, frontSight, handle, guard);
     this.model.add(this.pistol);
     this.current = this.pistol;
+    // Pistol magazine, only shown during a reload (dropping out, then the new one going in)
+    this.pistolMag = new THREE.Mesh(new RoundedBoxGeometry(0.032, 0.09, 0.042, 2, 0.006), darkMetal);
+    this.pistolMag.position.set(0, -0.13, 0.065);
+    this.pistolMag.rotation.x = 0.25;
+    this.pistolMag.visible = false;
+    this.pistol.add(this.pistolMag);
+    this.pistolMagHome = this.pistolMag.position.clone();
     this.pistolMuzzle = this.muzzle.position.clone();
     this.pistolMuzzleParent = slide;
     const simple = [slide, barrel, frame, frontSight, handle, guard];
@@ -112,6 +119,7 @@ export class Firearm {
     this.drawTimer = DRAW_TIME;
     this.zoom = 0;
     this.pistol.visible = spec.model === 'pistol';
+    this.mag = null;
     for (const m of Object.values(this.boxModels)) m.object.visible = false;
     if (spec.model === 'pistol') {
       this.current = this.pistol;
@@ -121,13 +129,16 @@ export class Firearm {
     let entry = this.boxModels[spec.model];
     if (!entry) {
       entry = buildGunModel(spec);
-      entry.object.position.copy(VIEW_OFFSETS[spec.model]);
+      const view = VIEW_OFFSETS[spec.model];
+      entry.object.position.copy(view.pos);
+      entry.object.scale.setScalar(view.scale);
       entry.object.traverse((o) => { if (o.isMesh) o.castShadow = false; });
       this.model.add(entry.object);
       this.boxModels[spec.model] = entry;
     }
     entry.object.visible = true;
     this.current = entry.object;
+    this.mag = entry.mag;
     this.attachMuzzle(entry.object, entry.muzzle);
   }
 
@@ -169,6 +180,39 @@ export class Firearm {
     this.scopeHeld = false;
   }
 
+  // Reload: tilt and roll the gun, drop the magazine out, bring a fresh one up into the
+  // well, slap it home, then settle back. Timed to the gun's real reload time.
+  animateReload(draw) {
+    const g = this.gun;
+    const reloading = g.reloadTimer > 0;
+    const p = reloading ? 1 - g.reloadTimer / g.spec.reloadTime : 1;
+    const ss = THREE.MathUtils.smoothstep;
+    const pose = reloading ? Math.min(ss(p, 0, 0.15), 1 - ss(p, 0.86, 1)) : 0;
+    const slap = reloading ? Math.max(0, 1 - Math.abs(p - 0.76) / 0.05) : 0; // jolt when the mag seats
+
+    this.model.rotation.x = 0.28 * pose + 0.6 * draw - 0.08 * slap;
+    this.model.rotation.z = 0.55 * pose;
+    this.model.rotation.y = -0.05 + 0.18 * pose;
+    this.model.position.x = 0.24 - 0.05 * pose;
+    this.model.position.y += 0.015 * slap - 0.03 * pose;
+
+    // Magazine: out by 45%, back in by 75%
+    const drop = reloading ? (p < 0.45 ? ss(p, 0.12, 0.45) : 1 - ss(p, 0.45, 0.75)) : 0;
+    const pistol = g.spec.model === 'pistol';
+    const mag = pistol ? this.pistolMag : this.mag;
+    if (!mag) return;
+    if (pistol) {
+      // The pistol model has its own magazine; this one shows only while it is out of the grip
+      mag.visible = reloading && drop > 0.08;
+      mag.position.copy(this.pistolMagHome);
+      mag.position.y -= 0.25 * drop;
+    } else {
+      mag.position.set(0, -0.32 * drop, 0.04 * drop);
+      mag.rotation.x = -0.4 * drop;
+      mag.visible = drop < 0.97;
+    }
+  }
+
   update(dt) {
     this.gun.update(dt);
     const spec = this.gun.spec;
@@ -196,9 +240,7 @@ export class Firearm {
     // Behind the scope the gun itself is hidden (the overlay draws the scope)
     this.current.visible = this.zoom < 0.6;
 
-    // Tilt the gun down while reloading
-    const targetTilt = (this.gun.reloadTimer > 0 ? 0.35 : 0) + 0.6 * draw;
-    this.model.rotation.x += (targetTilt - this.model.rotation.x) * Math.min(1, dt * 10);
+    this.animateReload(draw);
 
     this.flashTimer -= dt;
     this.flash.visible = this.flashTimer > 0;
