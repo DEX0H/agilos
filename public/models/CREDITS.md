@@ -3,7 +3,7 @@
 All models are by Quaternius (https://quaternius.com), released under CC0 1.0
 (public domain dedication): free for any use, including commercial, no attribution required.
 
-- `char_male.glb`, `char_female.glb`: Universal Base Characters (Standard),
+- `char_male.glb`: Universal Base Characters (Standard),
   https://quaternius.itch.io/universal-base-characters. Re-exported to GLB with
   meshopt compression and 1024 px WebP textures.
 - `anims.glb`: Universal Animation Library (Standard),

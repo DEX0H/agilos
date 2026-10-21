@@ -5,7 +5,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
 // Shared model loading. Each file is fetched once; callers clone what they need.
 // All models are CC0 by Quaternius (see public/models/CREDITS.md):
-//   char_male.glb, char_female.glb  Universal Base Characters (Standard), optimised
+//   char_male.glb                   Universal Base Characters (Standard), optimised
 //   anims.glb                       Universal Animation Library (Standard), 17 clips kept
 //   guns/Pistol_*.fbx               Ultimate Gun Pack
 

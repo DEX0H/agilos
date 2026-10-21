@@ -243,7 +243,7 @@ export class Bot extends Character {
     this.mixer = null;
     this.deathTime = 0;
     this.shootAnim = 0;
-    const kind = this.index % 2 === 0 ? 'male' : 'female';
+    const kind = 'male';
     Promise.all([loadCharacter(kind), loadAnimations(), loadPistol()])
       .then(([g, clips, pistol]) => this.useHuman(g, clips, pistol))
       .catch((e) => console.warn('Bot model failed to load; keeping the simple model', e));
