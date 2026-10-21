@@ -247,8 +247,10 @@ export class Bot extends Character {
   useRobot(gltf) {
     const model = SkeletonUtils.clone(gltf.scene);
 
-    // Stand it on the ground at 1.8 m tall
-    const box = new THREE.Box3().setFromObject(model);
+    // Stand it on the ground at 1.8 m tall. `precise` measures the skinned (posed) vertices;
+    // the raw geometry is in a different scale from the armature.
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(model, true);
     const s = STAND_H / Math.max(0.01, box.max.y - box.min.y);
     model.scale.setScalar(s);
     model.position.y = -box.min.y * s;
