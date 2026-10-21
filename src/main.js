@@ -8,7 +8,9 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildArena } from './arena.js';
 import { Player } from './player.js';
-import { Handgun } from './weapon.js';
+import { Firearm } from './weapon.js';
+import { HANDGUN, RARITY_COLORS } from './gun.js';
+import { MysteryBoxes } from './mysterybox.js';
 import { Knife } from './knife.js';
 import { World } from './world.js';
 import { NavGraph } from './nav.js';
@@ -59,16 +61,23 @@ const world = new World(scene, colliders);
 const player = new Player(camera, colliders, playerSpawn);
 world.add(player);
 const nav = new NavGraph(colliders, navPoints, navLinks, navJumps);
+const boxes = new MysteryBoxes(scene, world, navPoints);
 const BOT_COUNT = 4;
-const bots = new Bots(scene, world, nav, mobSpawns, BOT_COUNT);
+const bots = new Bots(scene, world, nav, mobSpawns, BOT_COUNT, boxes);
 const spawnPoints = [playerSpawn, ...mobSpawns];
 const match = new Match(scene, world, player, bots, spawnPoints);
 
-const weapon = new Handgun(camera, scene, player);
+const weapon = new Firearm(camera, scene, player);
 const knife = new Knife(camera, scene, player);
-// Every spawn (including a new match) starts with a full magazine and reserve
-player.onRespawn = () => weapon.gun.refill();
+// Every spawn (including a new match) starts with a fresh handgun; box weapons are lost
+player.onRespawn = () => weapon.equip(HANDGUN);
 let active = weapon;
+
+// A new match also moves the mystery boxes to new random spots
+function startMatch() {
+  boxes.place();
+  match.start();
+}
 
 const dust = createDust(scene);
 const postfx = createPostFx(renderer, scene, camera);
@@ -88,12 +97,29 @@ const toast = document.getElementById('toast');
 const hpFill = document.getElementById('hpfill');
 const hpShield = document.getElementById('hpshield');
 const hpNum = document.getElementById('hpnum');
+const promptEl = document.getElementById('prompt');
+const scope = document.getElementById('scope');
 buildControlsPanel(document.getElementById('settings'), document.getElementById('controlstext'));
 
 let toastTimer = 0;
-function showToast(text) {
+function showToast(text, color = '#fff', time = 1.5) {
   toast.textContent = text;
-  toastTimer = 1.5;
+  toast.style.color = color;
+  toastTimer = time;
+}
+
+// Mystery box: the spin lands and the weapon goes straight into your hands
+const RARITY_NAMES = { common: 'COMMON', rare: 'RARE', legendary: 'LEGENDARY' };
+function useBox() {
+  if (!player.locked || player.dead || player.frozen) return;
+  const box = boxes.inReach(player, camera.getWorldDirection(new THREE.Vector3()));
+  if (!box || !box.ready) return;
+  box.spin(player, (spec) => {
+    if (player.dead) return;
+    weapon.equip(spec);
+    setWeapon(weapon);
+    showToast(`${spec.label.toUpperCase()}  ·  ${RARITY_NAMES[spec.rarity]}`, RARITY_COLORS[spec.rarity], 2.2);
+  });
 }
 
 let fps = 60;
@@ -101,6 +127,7 @@ let hitmarkerTimer = 0;
 
 // 1 = handgun, 2 = knife. F flips the knife.
 function setWeapon(w) {
+  if (w !== active) weapon.release();
   active = w;
   weapon.model.visible = w === weapon;
   knife.model.visible = w === knife;
@@ -121,6 +148,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === b.weapon1) setWeapon(weapon);
   if (e.code === b.weapon2) setWeapon(knife);
   if (e.code === b.flip && !e.repeat) knife.flip();
+  if (e.code === b.interact && !e.repeat) useBox();
   if (e.code === b.quality && !e.repeat) setQuality(quality === 'high' ? 'low' : 'high');
   if (e.code === b.sensDown || e.code === b.sensUp) {
     setSens(settings.sens + (e.code === b.sensUp ? 0.1 : -0.1));
@@ -128,7 +156,7 @@ document.addEventListener('keydown', (e) => {
   }
   // Enter starts a new match once you are out or the match is over
   if (e.code === 'Enter' && !e.repeat && (match.state === 'over' || (match.state === 'live' && player.dead))) {
-    match.start();
+    startMatch();
   }
 });
 
@@ -138,7 +166,8 @@ document.addEventListener('pointerlockchange', () => {
   crosshair.style.display = locked ? 'block' : 'none';
   if (locked) lockMsg.style.display = 'none';
   // First time you click in, the match begins
-  if (locked && match.state === 'warmup') match.start();
+  if (locked && match.state === 'warmup') startMatch();
+  if (!locked) weapon.release();
 });
 
 // The browser refused mouse lock (raised by pointerlockerror or by the player's click handler)
@@ -148,13 +177,25 @@ function showLockFailed() {
 document.addEventListener('pointerlockerror', showLockFailed);
 document.addEventListener('agilos:lockfailed', showLockFailed);
 
-// Left click fires the instant the button goes down, against the latest aim
+// Left click fires the instant the button goes down, against the latest aim.
+// Holding it keeps automatic weapons firing (see the frame loop). Right click scopes.
 document.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || !player.locked || player.frozen) return;
+  if (!player.locked) return;
+  if (e.button === 2) {
+    if (active === weapon) weapon.scopeHeld = true;
+    return;
+  }
+  if (e.button !== 0 || player.frozen) return;
+  if (active === weapon) weapon.triggerHeld = true;
   player.syncAim();
   const r = active.fire(world);
   if (r.hit) hitmarkerTimer = 0.15;
 });
+document.addEventListener('mouseup', (e) => {
+  if (e.button === 0) weapon.triggerHeld = false;
+  if (e.button === 2) weapon.scopeHeld = false;
+});
+document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -182,10 +223,11 @@ world.onKill((killer, victim, how) => {
 // changed by a determined player anyway; real anti-cheat needs an authoritative server.)
 const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 if (DEBUG) window.agilos = {
-  player, weapon, knife, setWeapon, world, nav, bots, match, renderer, scene, postfx,
+  player, weapon, knife, setWeapon, world, nav, bots, match, boxes, renderer, scene, postfx, useBox,
   get kills() { return player.kills; },
 };
 
+const _fwd = new THREE.Vector3();
 let last = performance.now();
 function frame(now) {
   // Clamp both ways: the first rAF timestamp can be earlier than `last`
@@ -195,9 +237,16 @@ function frame(now) {
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
   player.update(dt);
+  // Held trigger on an automatic weapon: the gun's own fire rate paces the shots
+  if (active === weapon && weapon.triggerHeld && weapon.spec.auto && player.locked && !player.frozen && !player.dead) {
+    player.syncAim();
+    const r = weapon.fire(world);
+    if (r.hit) hitmarkerTimer = 0.15;
+  }
   weapon.update(dt);
   knife.update(dt);
   bots.update(dt);
+  boxes.update(dt, t);
   match.update(dt);
   world.update(dt);
 
@@ -212,6 +261,23 @@ function frame(now) {
     gap = 3 + Math.tan(weapon.currentSpread()) / half * (window.innerHeight / 2);
   }
   crosshair.style.setProperty('--gap', `${Math.min(80, gap).toFixed(1)}px`);
+
+  // Scope overlay replaces the crosshair while zoomed in
+  const scoped = active === weapon && weapon.scoped;
+  scope.style.opacity = scoped ? '1' : '0';
+  crosshair.style.visibility = scoped ? 'hidden' : 'visible';
+
+  // Mystery box prompt
+  let promptText = '';
+  if (player.locked && !player.dead) {
+    const box = boxes.inReach(player, camera.getWorldDirection(_fwd));
+    if (box) {
+      if (box.ready) promptText = `[${bindLabel('interact')}]  MYSTERY BOX`;
+      else if (box.cooldownLeft > 0) promptText = `RECHARGING  ${Math.ceil(box.cooldownLeft)}s`;
+    }
+  }
+  promptEl.textContent = promptText;
+  promptEl.style.opacity = promptText ? '1' : '0';
 
   toastTimer = Math.max(0, toastTimer - dt);
   toast.style.opacity = String(Math.min(1, toastTimer * 2));
@@ -241,7 +307,7 @@ function frame(now) {
   const shield = player.shielded && !player.dead ? `   SHIELD ${Math.ceil(player.shieldTimer)}s (firing drops it)` : '';
   hud.textContent =
     `HP      ${Math.ceil(player.health)}${shield}\n` +
-    `WEAPON  ${active === knife ? `knife (${bindLabel('flip')} flip)` : `handgun  ${reloading ? 'RELOADING' : `${weapon.ammo}/${weapon.magSize}   reserve ${weapon.reserve}`}`}\n` +
+    `WEAPON  ${active === knife ? `knife (${bindLabel('flip')} flip)` : `${weapon.spec.label.toLowerCase()}  ${reloading ? 'RELOADING' : `${weapon.ammo}/${weapon.magSize}   reserve ${weapon.reserve}`}`}\n` +
     `KILLS   ${player.kills}   alive ${match.aliveCount()}/${match.total}\n` +
     (match.zoneText() ? `${match.zoneText()}\n` : '') +
     `speed   ${Math.hypot(v.x, v.z).toFixed(1)} m/s   height ${player.position.y.toFixed(1)} m\n` +

@@ -104,6 +104,29 @@
         color: #fff; font: 600 30px/1 var(--font-display); text-shadow: 0 1px 4px #000; min-width: 48px;
         font-variant-numeric: tabular-nums;
       }
+      /* Mystery box prompt, under the crosshair */
+      #prompt {
+        position: fixed; left: 50%; top: 57%; transform: translateX(-50%); pointer-events: none;
+        padding: 6px 14px; border-radius: 3px; background: rgba(8,10,14,0.55);
+        color: #bff4ff; font: 700 17px var(--font-ui); letter-spacing: 0.12em; white-space: nowrap;
+        text-shadow: 0 1px 3px #000; opacity: 0; transition: opacity 0.12s;
+      }
+      /* Sniper scope: clear circle, black outside, thin cross and a red dot */
+      #scope {
+        position: fixed; inset: 0; pointer-events: none; opacity: 0;
+        background: radial-gradient(circle at center,
+          transparent 0 calc(42vmin - 3px), rgba(0,0,0,0.9) calc(42vmin - 1px), #000 calc(42vmin + 8px));
+      }
+      #scope::before, #scope::after {
+        content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.85);
+      }
+      #scope::before { width: 84vmin; height: 2px; }
+      #scope::after { width: 2px; height: 84vmin; }
+      #scope i {
+        position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px;
+        border-radius: 50%; background: #ff3b2f; box-shadow: 0 0 4px #ff3b2f; z-index: 1;
+      }
       #toast {
         position: fixed; left: 50%; top: 62%; transform: translateX(-50%); pointer-events: none;
         color: #fff; font: 700 18px var(--font-ui); text-shadow: 0 1px 3px #000; opacity: 0;
@@ -212,6 +235,7 @@
     </style>
   </head>
   <body>
+    <div id="scope"><i></i></div>
     <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i></div>
     <div id="hitmarker">×</div>
     <div id="damage"></div>
@@ -222,6 +246,7 @@
       <div id="hpbar"><div id="hpfill"></div><div id="hpshield"></div></div>
       <div id="hpnum"></div>
     </div>
+    <div id="prompt"></div>
     <div id="toast"></div>
     <div id="hud"></div>
     <div id="feed"></div>

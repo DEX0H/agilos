@@ -88,6 +88,7 @@ export class Character {
     this.shieldTimer = SPAWN_SHIELD;
     this.sinceDamage = 0;
     this.hitStrength = 0;
+    this.ads = false;         // looking down a scope: scoped guns are accurate only then
   }
 
   get shielded() {
