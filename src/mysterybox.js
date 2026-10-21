@@ -21,8 +21,8 @@ const DIRS = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0), new THREE
 const DOWN = new THREE.Vector3(0, -1, 0);
 const UP = new THREE.Vector3(0, 1, 0);
 const BEAM_HEIGHT = 26;
-const BEAM_READY = new THREE.Color(0.35, 1.1, 1.6);
-const BEAM_USED = new THREE.Color(0.9, 0.25, 0.2);
+const BEAM_READY = new THREE.Color(0.2, 0.65, 1.0);
+const BEAM_USED = new THREE.Color(0.6, 0.16, 0.12);
 
 const _v = new THREE.Vector3();
 const _box = new THREE.Box3();
@@ -207,7 +207,7 @@ class MysteryBox {
     return true;
   }
 
-  update(dt, t) {
+  update(dt, t, eye) {
     this.timer += dt;
     let wantOpen = 0;
     if (this.state === 'spinning') {
@@ -252,7 +252,10 @@ class MysteryBox {
     const target = ready ? BEAM_READY : this.state === 'cooldown' ? BEAM_USED : BEAM_READY;
     this.beamMat.color.lerp(target, Math.min(1, dt * 4));
     const pulse = ready ? 0.85 + 0.15 * Math.sin(t * 3 + this.group.position.x) : this.state === 'cooldown' ? 0.35 : 1.4;
-    this.beamMat.opacity = pulse;
+    // Fade the beam up close so it doesn't blind whoever is using the box
+    const near = eye ? Math.hypot(eye.x - this.group.position.x, eye.z - this.group.position.z) : 99;
+    const fade = 0.12 + 0.88 * THREE.MathUtils.smoothstep(near, 2.5, 12);
+    this.beamMat.opacity = pulse * fade;
     const rarity = this.shown && this.shown.rarity ? RARITY_COLORS[this.shown.rarity] : null;
     if (rarity && this.state === 'showing') this.light.color.set(rarity);
     else this.light.color.setRGB(0.5, 0.9, 1);
@@ -371,7 +374,7 @@ export class MysteryBoxes {
     return best;
   }
 
-  update(dt, t) {
-    for (const b of this.boxes) if (b.group.visible) b.update(dt, t);
+  update(dt, t, eye = null) {
+    for (const b of this.boxes) if (b.group.visible) b.update(dt, t, eye);
   }
 }

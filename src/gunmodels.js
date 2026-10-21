@@ -27,6 +27,17 @@ function materials() {
   return mats;
 }
 
+// Magazine parts go in their own group so the reload animation can drop and insert them
+function magGroup(g) {
+  let mag = g.getObjectByName('mag');
+  if (!mag) {
+    mag = new THREE.Group();
+    mag.name = 'mag';
+    g.add(mag);
+  }
+  return mag;
+}
+
 function part(group, geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
@@ -44,7 +55,7 @@ function smg(g, m, accent) {
   part(g, box(0.052, 0.03, 0.26, 0.006), m.metal, 0, 0.1, -0.09);          // top rail
   part(g, tube(0.016, 0.1), m.dark, 0, 0.055, -0.28);                      // shroud
   part(g, tube(0.009, 0.05), m.metal, 0, 0.055, -0.35);                    // barrel tip
-  part(g, box(0.038, 0.2, 0.055, 0.006), m.dark, 0, -0.08, -0.13, 0.08);   // magazine
+  part(magGroup(g), box(0.038, 0.2, 0.055, 0.006), m.dark, 0, -0.08, -0.13, 0.08); // magazine
   part(g, box(0.042, 0.11, 0.05, 0.012), m.polymer, 0, -0.045, 0.01, 0.3); // grip
   part(g, box(0.05, 0.035, 0.07, 0.006), m.metal, 0, 0.13, -0.06);         // red dot base
   part(g, box(0.045, 0.04, 0.012, 0.004), m.glass, 0, 0.165, -0.06);       // red dot glass
@@ -63,8 +74,8 @@ function rifle(g, m, accent) {
   part(g, tube(0.011, 0.14), m.dark, 0, 0.06, -0.55);                     // barrel
   part(g, tube(0.017, 0.05, 8), m.metal, 0, 0.06, -0.63);                 // muzzle brake
   // Curved magazine
-  part(g, box(0.038, 0.12, 0.07, 0.006), m.dark, 0, -0.05, -0.13, 0.12);
-  part(g, box(0.038, 0.1, 0.065, 0.006), m.dark, 0, -0.14, -0.105, 0.35);
+  part(magGroup(g), box(0.038, 0.12, 0.07, 0.006), m.dark, 0, -0.05, -0.13, 0.12);
+  part(magGroup(g), box(0.038, 0.1, 0.065, 0.006), m.dark, 0, -0.14, -0.105, 0.35);
   part(g, box(0.042, 0.11, 0.05, 0.012), m.polymer, 0, -0.045, 0.02, 0.3); // grip
   part(g, box(0.05, 0.11, 0.24, 0.02), m.tan, 0, 0.03, 0.24);             // stock
   part(g, box(0.055, 0.12, 0.02, 0.006), m.polymer, 0, 0.025, 0.36);      // butt pad
@@ -83,7 +94,7 @@ function sniper(g, m, accent) {
   part(g, box(0.05, 0.035, 0.16, 0.01), m.polymer, 0, 0.1, 0.27);        // cheek rest
   part(g, box(0.065, 0.14, 0.025, 0.008), m.polymer, 0, 0.0, 0.46);      // butt pad
   part(g, box(0.042, 0.11, 0.05, 0.012), m.polymer, 0, -0.045, 0.06, 0.3); // grip
-  part(g, box(0.04, 0.06, 0.08, 0.006), m.dark, 0, -0.03, -0.12);        // box magazine
+  part(magGroup(g), box(0.04, 0.06, 0.08, 0.006), m.dark, 0, -0.03, -0.12); // box magazine
   // Bolt handle
   part(g, tube(0.005, 0.06, 6).rotateY(Math.PI / 2), m.metal, 0.05, 0.07, 0.04);
   part(g, new THREE.SphereGeometry(0.011, 10, 8), m.metal, 0.08, 0.07, 0.04);
@@ -106,5 +117,5 @@ export function buildGunModel(spec) {
   const group = new THREE.Group();
   const accent = m.accent[spec.rarity] || m.accent.common;
   const muzzle = BUILDERS[spec.model](group, m, accent);
-  return { object: group, muzzle };
+  return { object: group, muzzle, mag: group.getObjectByName('mag') };
 }

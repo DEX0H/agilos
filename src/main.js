@@ -98,6 +98,14 @@ const hpFill = document.getElementById('hpfill');
 const hpShield = document.getElementById('hpshield');
 const hpNum = document.getElementById('hpnum');
 const promptEl = document.getElementById('prompt');
+const ammoName = document.getElementById('ammoname');
+const ammoRow = document.getElementById('ammorow');
+const ammoMag = document.getElementById('ammomag');
+const ammoRes = document.getElementById('ammores');
+const pips = document.getElementById('pips');
+const reloadBar = document.getElementById('reloadbar');
+const reloadFill = reloadBar.firstElementChild;
+const reloadHint = document.getElementById('reloadhint');
 const scope = document.getElementById('scope');
 buildControlsPanel(document.getElementById('settings'), document.getElementById('controlstext'));
 
@@ -228,6 +236,50 @@ if (DEBUG) window.agilos = {
 };
 
 const _fwd = new THREE.Vector3();
+// Ammo panel. Pips are rebuilt only when the weapon changes; each frame just marks spent ones.
+let pipsFor = null;
+let pipsShown = -1;
+function updateAmmo() {
+  const knifeOut = active === knife;
+  const spec = weapon.spec;
+  ammoName.textContent = knifeOut ? 'Knife' : spec.label;
+  ammoName.style.setProperty('--rarity', knifeOut || !spec.rarity ? '#d9d9d9' : RARITY_COLORS[spec.rarity]);
+  ammoRow.style.display = knifeOut ? 'none' : 'flex';
+  pips.style.display = knifeOut ? 'none' : 'flex';
+  const reloading = !knifeOut && weapon.reloadTimer > 0;
+  reloadBar.style.opacity = reloading ? '1' : '0';
+  if (reloading) reloadFill.style.width = `${(1 - weapon.reloadTimer / spec.reloadTime) * 100}%`;
+
+  let hint = '';
+  if (!knifeOut && !player.dead) {
+    if (weapon.ammo === 0 && weapon.reserve === 0) hint = 'NO AMMO';
+    else if (!reloading && weapon.ammo <= Math.ceil(weapon.magSize / 4)) hint = `RELOAD  [${bindLabel('reload')}]`;
+  }
+  reloadHint.textContent = hint;
+  reloadHint.className = hint === 'NO AMMO' ? 'empty' : '';
+  reloadHint.style.opacity = hint ? '1' : '0';
+  if (knifeOut) return;
+
+  const low = weapon.ammo <= Math.ceil(weapon.magSize / 4);
+  ammoMag.textContent = String(weapon.ammo);
+  ammoMag.className = low ? 'low' : '';
+  ammoRes.textContent = `/ ${weapon.reserve === Infinity ? '∞' : weapon.reserve}`;
+  if (pipsFor !== weapon.gun) {
+    pipsFor = weapon.gun;
+    pipsShown = -1;
+    pips.innerHTML = '';
+    for (let i = 0; i < weapon.magSize; i++) pips.append(document.createElement('i'));
+    pips.classList.toggle('big', weapon.magSize <= 12);
+  }
+  pips.classList.toggle('low', low);
+  if (pipsShown !== weapon.ammo) {
+    pipsShown = weapon.ammo;
+    // Rounds leave from the left, like a magazine emptying toward the chamber
+    const n = pips.children.length;
+    for (let i = 0; i < n; i++) pips.children[i].classList.toggle('spent', i < n - weapon.ammo);
+  }
+}
+
 let last = performance.now();
 function frame(now) {
   // Clamp both ways: the first rAF timestamp can be earlier than `last`
@@ -246,7 +298,7 @@ function frame(now) {
   weapon.update(dt);
   knife.update(dt);
   bots.update(dt);
-  boxes.update(dt, t);
+  boxes.update(dt, t, camera.position);
   match.update(dt);
   world.update(dt);
 
@@ -302,12 +354,11 @@ function frame(now) {
     deadMsg.textContent = player.lastAttacker ? `KILLED BY ${player.lastAttacker.name.toUpperCase()}` : 'YOU DIED';
   }
 
+  updateAmmo();
   const v = player.velocity;
-  const reloading = weapon.reloadTimer > 0;
   const shield = player.shielded && !player.dead ? `   SHIELD ${Math.ceil(player.shieldTimer)}s (firing drops it)` : '';
   hud.textContent =
     `HP      ${Math.ceil(player.health)}${shield}\n` +
-    `WEAPON  ${active === knife ? `knife (${bindLabel('flip')} flip)` : `${weapon.spec.label.toLowerCase()}  ${reloading ? 'RELOADING' : `${weapon.ammo}/${weapon.magSize}   reserve ${weapon.reserve}`}`}\n` +
     `KILLS   ${player.kills}   alive ${match.aliveCount()}/${match.total}\n` +
     (match.zoneText() ? `${match.zoneText()}\n` : '') +
     `speed   ${Math.hypot(v.x, v.z).toFixed(1)} m/s   height ${player.position.y.toFixed(1)} m\n` +
