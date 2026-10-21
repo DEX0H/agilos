@@ -15,3 +15,6 @@ dist/
 .firebase/
 firebase-debug.log
 npm-debug.log*
+
+# Desktop build output
+release/

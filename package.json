@@ -1,19 +1,83 @@
 {
   "name": "agilos",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@fontsource/rajdhani": "^5.3.0",
-    "@fontsource/teko": "^5.3.0",
-    "three": "^0.170.0"
+    "preview": "vite preview",
+    "app": "vite build && electron .",
+    "dist:win": "vite build && electron-builder --win --publish never"
   },
   "devDependencies": {
+    "@fontsource/rajdhani": "^5.3.0",
+    "@fontsource/teko": "^5.3.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
+    "three": "^0.170.0",
     "vite": "^6.4.5"
+  },
+  "description": "Fast, vertical movement shooter: battle royale against bots, in the browser or on Windows.",
+  "license": "MIT",
+  "author": "DEX0H",
+  "homepage": "https://dex0h.github.io/agilos/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DEX0H/agilos.git"
+  },
+  "main": "electron/main.cjs",
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "build": {
+    "appId": "io.github.dex0h.agilos",
+    "productName": "Agilos",
+    "copyright": "Copyright © 2026 DEX0H. MIT License.",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "build/icon.png",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "legalTrademarks": "Agilos",
+      "executableName": "Agilos"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Agilos",
+      "uninstallDisplayName": "Agilos",
+      "artifactName": "Agilos-Setup.${ext}",
+      "license": "LICENSE",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "DEX0H",
+        "repo": "agilos",
+        "releaseType": "release"
+      }
+    ]
   }
 }

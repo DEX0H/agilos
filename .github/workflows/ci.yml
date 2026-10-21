@@ -21,5 +21,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1' # the web build doesn't need Electron
       - run: npm run build
       - run: npm audit --audit-level=high

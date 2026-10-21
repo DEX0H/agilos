@@ -3,7 +3,12 @@
 A fast, vertical, browser-based movement shooter: battle royale against bots, inspired by
 Apex Legends' movement, Call of Duty's look and Counter-Strike's gunplay.
 
-**Play:** https://dex0h.github.io/agilos/ (desktop browser, open it in its own tab)
+**Play in the browser:** https://dex0h.github.io/agilos/ (desktop browser, open it in its own tab)
+
+**Download for Windows:** [Agilos-Setup.exe](https://github.com/DEX0H/agilos/releases/latest/download/Agilos-Setup.exe)
+(Windows 10 and 11, 64-bit; [all releases](https://github.com/DEX0H/agilos/releases),
+[code signing policy](#code-signing-policy)). The installer adds Start menu and desktop
+shortcuts and the game updates itself. Uninstall from Windows Settings > Apps > Agilos.
 
 ## The game
 
@@ -66,6 +71,21 @@ npm run build   # production build in dist/
 
 Pushing to `main` builds and deploys to GitHub Pages through GitHub Actions.
 
+### Windows app
+
+The Windows app is the same game in an [Electron](https://www.electronjs.org/) window
+(`electron/`), packaged with electron-builder.
+
+```sh
+npm run app        # build, then run the desktop app
+npm run dist:win   # build the installer into release/ (on Windows)
+```
+
+Releases: bump `version` in `package.json`, merge, then push a tag `v<version>`. The
+[release workflow](.github/workflows/release.yml) builds the installer on Windows,
+signs it when signing is set up ([SIGNING.md](SIGNING.md)) and publishes it to GitHub
+Releases, where the download button and the in-app updater find it.
+
 ## Code layout
 
 | File | What it does |
@@ -91,6 +111,35 @@ Pushing to `main` builds and deploys to GitHub Pages through GitHub Actions.
 - **Models:** by Quaternius (CC0), see [public/models/CREDITS.md](public/models/CREDITS.md).
 - **Fonts:** Teko and Rajdhani (SIL Open Font License), via Fontsource.
 - **Engine:** three.js (MIT).
+
+## Code signing policy
+
+Windows releases are built only by this repository's
+[release workflow](.github/workflows/release.yml) on GitHub Actions, from the tagged source.
+Nothing is built or signed on a personal machine.
+
+- **Signing:** free code signing provided by [SignPath.io](https://signpath.io), with a
+  certificate by [SignPath Foundation](https://signpath.org), once our application is
+  approved. Until then, installers are published unsigned and Windows SmartScreen may
+  warn (More info > Run anyway).
+- **Team roles:** authors, reviewers and approvers:
+  [@DEX0H](https://github.com/DEX0H) (owner). Every change reaches `main` through a pull
+  request with a passing CI build, and every signing request is approved by hand.
+- **What is signed:** `Agilos.exe` and the `Agilos-Setup.exe` installer, product name
+  "Agilos". Electron's own runtime files are upstream binaries.
+
+## Privacy
+
+The game collects no personal data and has no analytics or ads. The browser version
+talks only to its own website. The Windows app also checks GitHub Releases
+(github.com) for updates at launch. You can turn that off in the menu: untick "Check for
+updates at launch". Settings stay on your computer (browser storage, or the app's folder
+under `%APPDATA%\Agilos`).
+
+## License
+
+Code: [MIT](LICENSE). Models, textures and fonts keep their own licences (CC0 and SIL
+OFL), see [public/models/CREDITS.md](public/models/CREDITS.md).
 
 ## Security
 

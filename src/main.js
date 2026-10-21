@@ -290,6 +290,28 @@ function updateAmmo() {
   }
 }
 
+// Windows download button on the web; in the desktop app, its version and update setting.
+// Clicks here must not start the game (the overlay click grabs the mouse).
+const desktopBox = document.getElementById('desktop');
+desktopBox.addEventListener('click', (e) => e.stopPropagation());
+desktopBox.addEventListener('mousedown', (e) => e.stopPropagation());
+if (window.agilosDesktop) {
+  window.agilosDesktop.info().then((info) => {
+    desktopBox.textContent = '';
+    const ver = document.createElement('span');
+    ver.className = 'desktop-sub';
+    ver.textContent = `Agilos for Windows · v${info.version}`;
+    const label = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = info.autoUpdate;
+    box.addEventListener('change', () => window.agilosDesktop.setAutoUpdate(box.checked));
+    label.append(box, ' Check for updates at launch');
+    desktopBox.append(ver, label);
+  }).catch(() => {});
+  window.agilosDesktop.onUpdateReady((v) => showToast(`Update ${v} ready: it installs when you close the game`, '#ffd27a', 6));
+}
+
 // Ring announcements in the toast line
 match.onRing = (text) => showToast(text, text.includes('CLOSING') ? '#ff8a5c' : '#dfe9ff', 2.5);
 
