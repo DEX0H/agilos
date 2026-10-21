@@ -33,15 +33,28 @@ const defaults = () => Object.fromEntries(ACTIONS.map(([a, , code]) => [a, code]
 
 export const settings = { binds: defaults(), sens: DEFAULT_SENS, layout: 'auto' };
 
+// Saved settings are untrusted input (anyone can edit their own localStorage), so only
+// known actions with plausible key codes, a known layout and a finite sensitivity are accepted.
+const LAYOUTS = new Set(['auto', 'qwerty', 'qwertz', 'azerty']);
+const CODE_RE = /^[A-Za-z][A-Za-z0-9]{0,23}$/;
 try {
   const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
-  if (saved) {
-    if (saved.binds) Object.assign(settings.binds, saved.binds);
-    if (typeof saved.sens === 'number' && saved.sens > 0) settings.sens = saved.sens;
-    if (saved.layout) settings.layout = saved.layout;
+  if (saved && typeof saved === 'object') {
+    if (saved.binds && typeof saved.binds === 'object') {
+      for (const [action] of ACTIONS) {
+        const code = Object.prototype.hasOwnProperty.call(saved.binds, action) ? saved.binds[action] : undefined;
+        if (typeof code === 'string' && CODE_RE.test(code) && code !== 'Escape' && code !== 'Enter') {
+          settings.binds[action] = code;
+        }
+      }
+    }
+    if (typeof saved.sens === 'number' && Number.isFinite(saved.sens)) {
+      settings.sens = Math.min(10, Math.max(0.1, saved.sens));
+    }
+    if (typeof saved.layout === 'string' && LAYOUTS.has(saved.layout)) settings.layout = saved.layout;
   }
 } catch {
-  // storage unavailable: keep defaults
+  // storage unavailable or corrupt: keep defaults
 }
 
 export function save() {

@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content-Security-Policy (GitHub Pages can't send headers, so it lives here).
+      Only the game's own files may run or load. 'wasm-unsafe-eval' is required by the
+      meshopt model decoder (WebAssembly); blob: and data: cover textures decoded from models.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob:; worker-src 'self' blob:; media-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
+    <meta name="referrer" content="no-referrer" />
     <title>Agilos</title>
     <style>
       /* Fonts (bundled, SIL Open Font License): Teko for display, Rajdhani for everything else */
