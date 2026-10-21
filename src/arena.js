@@ -205,6 +205,12 @@ export function buildArena(scene) {
   block(-30, 0, 1, 60, wallTop, { kind: 'metal', color: perimeter });
   block(30, 0, 1, 60, wallTop, { kind: 'metal', color: perimeter });
 
+  // Wall-jump chimneys: a free wall 1.4 m from the perimeter wall in the west and east
+  // streets. Kick back and forth to climb to 9 m.
+  const chimney = new THREE.Color(0x8a8f99);
+  block(-27.9, -7.5, 0.4, 5, 9, { kind: 'metal', color: chimney, trim: true });
+  block(27.9, 7.5, 0.4, 5, 9, { kind: 'metal', color: chimney, trim: true });
+
   // ---- Buildings ----
   // Centre tower, 4 stories (roof 12 m). Wall sides chosen to keep bridges and stairs clear.
   building(0, 0, 12, 12, 4, ['S', 'E', 'N', 'W'], ['W', 'E', 'W', 'S']);
