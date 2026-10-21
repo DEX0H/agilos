@@ -97,6 +97,7 @@ function makeNameTag(text) {
 export class Bot extends Character {
   constructor(scene, world, nav, spawn, index, spawnPoints) {
     super(world.colliders, spawn, NAMES[index % NAMES.length]);
+    this.index = index;
     this.world = world;
     this.nav = nav;
     this.spawnPoints = spawnPoints;
@@ -242,7 +243,7 @@ export class Bot extends Character {
     this.mixer = null;
     this.deathTime = 0;
     this.shootAnim = 0;
-    const kind = index % 2 === 0 ? 'male' : 'female';
+    const kind = this.index % 2 === 0 ? 'male' : 'female';
     Promise.all([loadCharacter(kind), loadAnimations(), loadPistol()])
       .then(([g, clips, pistol]) => this.useHuman(g, clips, pistol))
       .catch((e) => console.warn('Bot model failed to load; keeping the simple model', e));
