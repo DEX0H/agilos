@@ -7,7 +7,7 @@ export const HANDGUN = {
   name: 'handgun',
   range: 150,
   magSize: 12,
-  reserve: 48,
+  reserve: 72,
   reloadTime: 1.4,
   fireInterval: 0.22,
   damage: 25,
@@ -33,8 +33,14 @@ export class GunState {
     this.spec = spec;
     this.owner = owner;
     this.magSize = spec.magSize;
-    this.ammo = spec.magSize;
-    this.reserve = infiniteReserve ? Infinity : spec.reserve;
+    this.infiniteReserve = infiniteReserve;
+    this.refill();
+  }
+
+  // Full magazine and reserve, nothing in progress. Called on every spawn.
+  refill() {
+    this.ammo = this.spec.magSize;
+    this.reserve = this.infiniteReserve ? Infinity : this.spec.reserve;
     this.reloadTimer = 0;
     this.cooldown = 0;
     this.bloom = 0;

@@ -66,6 +66,8 @@ const match = new Match(scene, world, player, bots, spawnPoints);
 
 const weapon = new Handgun(camera, scene, player);
 const knife = new Knife(camera, scene, player);
+// Every spawn (including a new match) starts with a full magazine and reserve
+player.onRespawn = () => weapon.gun.refill();
 let active = weapon;
 
 const dust = createDust(scene);

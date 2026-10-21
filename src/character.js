@@ -88,6 +88,7 @@ export class Character {
     this.shieldTimer = SPAWN_SHIELD;
     this.sinceDamage = 0;
     this.hitStrength = 0;
+    if (this.onRespawn) this.onRespawn(); // e.g. refill weapons
   }
 
   get shielded() {

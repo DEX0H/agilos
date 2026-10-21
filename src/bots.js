@@ -386,8 +386,7 @@ export class Bot extends Character {
   respawn(fixed = false) {
     if (!fixed) this.spawn.copy(this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)]);
     super.respawn();
-    this.gun.ammo = this.gun.magSize;
-    this.gun.reloadTimer = 0;
+    this.gun.refill();
     this.target = null;
     this.targetVisible = false;
     this.path = [];
