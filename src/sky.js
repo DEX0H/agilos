@@ -11,8 +11,8 @@ export function createSky(scene) {
     depthWrite: false,
     fog: false,
     uniforms: {
-      uTop: { value: new THREE.Color(0x2c4468) },
-      uHorizon: { value: new THREE.Color(0xe7a878) },
+      uTop: { value: new THREE.Color(0x3d6a9e) },
+      uHorizon: { value: new THREE.Color(0xf0b07a) },
       uGround: { value: new THREE.Color(0x1d1a18) },
       uSunDir: { value: SUN_DIR },
       uSunColor: { value: new THREE.Color(1.0, 0.75, 0.45) },
