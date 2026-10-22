@@ -24,13 +24,20 @@ const _s2 = new THREE.Vector3();
 const _p1 = new THREE.Vector3();
 const _p2 = new THREE.Vector3();
 const _vec = (a, v) => v.set(a[0], a[1], a[2]);
+// Finger curl between two poses (support grip -> holding the magazine), without allocating
+const _blend = { fingers: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], thumb: [0, 0, 0] };
+function blendCurl(a, b, t) {
+  for (let i = 0; i < 4; i++) for (let k = 0; k < 3; k++) _blend.fingers[i][k] = a.fingers[i][k] + (b.fingers[i][k] - a.fingers[i][k]) * t;
+  for (let k = 0; k < 3; k++) _blend.thumb[k] = a.thumb[k] + (b.thumb[k] - a.thumb[k]) * t;
+  return _blend;
+}
 // Finger curls (radians per joint: base, middle, tip), for index, middle, ring, pinky and thumb
 const grip = [1.2, 1.3, 0.85];
 export const CURLS = {
   trigger: { fingers: [[0.35, 0.55, 0.35], grip, grip, grip], thumb: [0.25, 0.45, 0.3] },
   support: { fingers: [[0.95, 1.05, 0.7], [1, 1.1, 0.75], [1, 1.1, 0.75], [0.95, 1.05, 0.7]], thumb: [0.3, 0.3, 0.2] },
-  cup: { fingers: [[0.9, 1, 0.7], [0.95, 1.05, 0.7], [0.95, 1.05, 0.7], [0.9, 1, 0.7]], thumb: [0.35, 0.3, 0.2] },
-  mag: { fingers: [[0.6, 0.7, 0.5], [0.65, 0.75, 0.5], [0.65, 0.75, 0.5], [0.6, 0.7, 0.5]], thumb: [0.4, 0.4, 0.3] },
+  cup: { fingers: [[1.15, 1.25, 0.85], [1.2, 1.3, 0.9], [1.2, 1.3, 0.9], [1.1, 1.2, 0.85]], thumb: [0.45, 0.45, 0.3] },
+  mag: { fingers: [[1.05, 1.15, 0.8], [1.1, 1.2, 0.85], [1.1, 1.2, 0.85], [1.0, 1.1, 0.8]], thumb: [0.55, 0.55, 0.35] },
   fist: { fingers: [[1.25, 1.35, 0.9], grip, grip, grip], thumb: [0.5, 0.6, 0.4] },
 };
 const _X = new THREE.Vector3(1, 0, 0);
@@ -110,7 +117,7 @@ export class Firearm {
     const reloading = this.gun.reloadTimer > 0;
     return {
       right: { target: e.tR, shoulder: _vec(A.right.shoulder, _s1), pole: _vec(A.right.pole, _p1), curl: CURLS[A.right.curl] },
-      left: { target: e.tL, shoulder: _vec(A.left.shoulder, _s2), pole: _vec(A.left.pole, _p2), curl: reloading && this.leftOnMag > 0.5 ? CURLS.mag : CURLS[A.left.curl] },
+      left: { target: e.tL, shoulder: _vec(A.left.shoulder, _s2), pole: _vec(A.left.pole, _p2), curl: blendCurl(CURLS[A.left.curl], CURLS.mag, reloading ? this.leftOnMag : 0) },
     };
   }
 
