@@ -117,7 +117,11 @@
       }
       /* Fade to black between matches */
       body.dead #ammo, body.dead #hpwrap, body.dead #reloadhint, body.dead #crosshair, body.dead #prompt, body.dead #toast, body.dead #countdown { visibility: hidden; }
-      #wipe { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.28s ease; }
+      #wipe {
+        position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.28s ease;
+        display: flex; align-items: center; justify-content: center;
+        font: 700 15px var(--font-ui); letter-spacing: 0.32em; color: #ffd27a;
+      }
       #banner {
         display: none; position: fixed; left: 16px; right: 16px; top: 20%; justify-content: center;
         text-align: center; white-space: pre-line; color: #fff3e0;
