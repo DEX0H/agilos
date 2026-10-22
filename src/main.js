@@ -168,6 +168,7 @@ let resetting = false;
 function restartMatch() {
   if (resetting) return;
   resetting = true;
+  wipe.textContent = 'LOADING MAP';
   wipe.style.opacity = '1';
   setTimeout(() => {
     startMatch();
