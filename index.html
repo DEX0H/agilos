@@ -57,11 +57,67 @@
         position: fixed; inset: 0; opacity: 0; pointer-events: none;
         background: radial-gradient(ellipse at center, rgba(0,0,0,0) 50%, rgba(200,0,0,0.85) 100%);
       }
-      #dead {
-        display: none; position: fixed; inset: 0; align-items: center; justify-content: center;
-        color: #ff5a4a; font: 600 clamp(36px, 6vw, 64px)/1 var(--font-display); letter-spacing: 0.04em;
-        text-shadow: 0 2px 8px #000; pointer-events: none;
+      /* Mystery box markers: a gold diamond with the distance, clamped to the screen edge */
+      #markers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      .bm {
+        position: absolute; left: 0; top: 0; display: none; flex-direction: column; align-items: center; gap: 3px;
+        font: 700 13px/1 var(--font-ui); letter-spacing: 0.06em; color: #ffd27a; text-shadow: 0 1px 3px #000;
+        font-variant-numeric: tabular-nums; will-change: transform;
       }
+      .bm i {
+        width: 18px; height: 18px; transform: rotate(45deg); border: 2px solid #ffb02e; border-radius: 3px;
+        background: rgba(255,176,46,0.28); box-shadow: 0 0 12px rgba(255,176,46,0.75);
+        display: grid; place-items: center;
+      }
+      .bm i::after { content: '?'; transform: rotate(-45deg); color: #fff; font: 600 17px/1 var(--font-display); }
+      .bm.edge { opacity: 0.75; }
+      .bm.edge span { display: none; }
+      .bm.cool { color: #a7adb5; }
+      .bm.cool i { border-color: #8a8f96; background: rgba(120,124,130,0.25); box-shadow: none; }
+      /* Elimination / victory card */
+      #deathcard {
+        display: none; position: fixed; left: 0; right: 0; bottom: 4%; padding: 26px 16px 26px;
+        flex-direction: column; align-items: center; gap: 10px; text-align: center; pointer-events: none;
+        background: linear-gradient(180deg, transparent, rgba(6,4,4,0.62) 22%, rgba(6,4,4,0.62) 78%, transparent);
+      }
+      #deathcard.show { display: flex; }
+      .dc-title {
+        font: 600 clamp(52px, 8vw, 100px)/0.9 var(--font-display); letter-spacing: 0.08em; color: #ff4a3a;
+        text-shadow: 0 4px 26px rgba(0,0,0,0.8); animation: dc-slam 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+      }
+      #deathcard.win .dc-title { color: #ffd27a; text-shadow: 0 0 30px rgba(255,190,80,0.55), 0 4px 26px rgba(0,0,0,0.8); }
+      .dc-by { font: 600 clamp(17px, 1.9vw, 23px)/1.2 var(--font-ui); color: #f2f2f2; letter-spacing: 0.04em; animation: dc-rise 0.4s 0.3s both; }
+      .dc-by b { color: #ff8a5c; font-weight: 700; }
+      .dc-by em { font-style: normal; color: #ffd27a; }
+      .dc-stats { display: flex; gap: clamp(18px, 4vw, 44px); animation: dc-rise 0.4s 0.5s both; }
+      .dc-stats div { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; }
+      .dc-stats b { font: 600 clamp(30px, 3.6vw, 42px)/1 var(--font-display); color: #fff; font-variant-numeric: tabular-nums; }
+      .dc-stats span { font: 700 11px/1 var(--font-ui); letter-spacing: 0.18em; color: #a9b0ba; text-transform: uppercase; }
+      .dc-foot { margin-top: 10px; font: 700 15px/1.6 var(--font-ui); letter-spacing: 0.14em; color: #dfe9ff; animation: dc-rise 0.4s 0.85s both; }
+      .dc-foot kbd {
+        font: 700 13px var(--font-ui); padding: 2px 9px; margin-right: 6px; border-radius: 4px;
+        border: 1px solid rgba(255,255,255,0.45); background: rgba(255,255,255,0.12); animation: dc-pulse 1.6s 1.4s infinite;
+      }
+      .dc-foot small { display: block; font-size: 13px; letter-spacing: 0.1em; color: #a9b0ba; }
+      @keyframes dc-slam { from { transform: scale(2.3); opacity: 0; letter-spacing: 0.4em; } to { transform: scale(1); opacity: 1; } }
+      @keyframes dc-rise { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+      @keyframes dc-pulse { 50% { background: rgba(255,255,255,0.32); } }
+      /* Match countdown: one big number per second, then GO */
+      #countdown {
+        display: none; position: fixed; inset: 0; flex-direction: column; align-items: center; justify-content: center;
+        gap: 6px; pointer-events: none; padding-bottom: 22vh;
+      }
+      #countdown span { font: 600 clamp(96px, 15vw, 180px)/0.85 var(--font-display); color: #fff; text-shadow: 0 4px 30px rgba(0,0,0,0.7); }
+      #countdown span.pop { animation: cd-pop 0.95s ease-out both; }
+      #countdown span.go { color: #5fd35a; }
+      #countdown small { font: 700 16px/1 var(--font-ui); letter-spacing: 0.32em; color: #ffd27a; text-shadow: 0 1px 4px #000; }
+      @keyframes cd-pop {
+        0% { transform: scale(1.9); opacity: 0; } 14% { transform: scale(1); opacity: 1; }
+        78% { opacity: 1; } 100% { transform: scale(0.82); opacity: 0; }
+      }
+      /* Fade to black between matches */
+      body.dead #ammo, body.dead #hpwrap, body.dead #reloadhint, body.dead #crosshair, body.dead #prompt, body.dead #toast { visibility: hidden; }
+      #wipe { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.28s ease; }
       #banner {
         display: none; position: fixed; left: 16px; right: 16px; top: 20%; justify-content: center;
         text-align: center; white-space: pre-line; color: #fff3e0;
@@ -355,8 +411,16 @@
     <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i></div>
     <div id="hitmarker">×</div>
     <div id="damage"></div>
-    <div id="dead">YOU DIED</div>
+    <div id="markers"></div>
     <div id="banner"></div>
+    <div id="deathcard">
+      <div class="dc-title"></div>
+      <div class="dc-by"></div>
+      <div class="dc-stats"></div>
+      <div class="dc-foot"></div>
+    </div>
+    <div id="countdown"><span></span><small>GET READY</small></div>
+    <div id="wipe"></div>
     <div id="shieldtint"></div>
     <div id="hpwrap">
       <div id="hpbar"><div id="hpfill"></div><div id="hpshield"></div></div>

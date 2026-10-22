@@ -379,7 +379,10 @@ export class MysteryBoxes {
           const f3 = floorAt(cx - d.x * 1.0, floor, cz - d.z * 1.0);
           const level = (f) => f !== null && Math.abs(f - floor) < 0.06;
           if (level(f1) && level(f2) && level(f3)) {
-            spots.push({ pos: new THREE.Vector3(cx, floor, cz), wall: d.clone() });
+            // The beam stops at whatever is overhead (a floor above, a roof)
+            _v.set(cx, floor + HGT + 0.05, cz);
+            const sky = this.world.raycastWorld(_v, UP, BEAM_HEIGHT);
+            spots.push({ pos: new THREE.Vector3(cx, floor, cz), wall: d.clone(), sky });
           }
           break;
         }
@@ -395,11 +398,17 @@ export class MysteryBoxes {
       const i = colliders.indexOf(b.collider);
       if (i >= 0) colliders.splice(i, 1);
     }
-    const pool = [...this.spots].sort(() => Math.random() - 0.5);
+    // Spots under open sky first (their beam can be seen from across the map), and
+    // away from the outer walls where nobody goes; covered spots only fill the gaps
+    const open = (s) => s.sky >= 10 && Math.max(Math.abs(s.pos.x), Math.abs(s.pos.z)) < 27;
+    const shuffled = [...this.spots].sort(() => Math.random() - 0.5);
+    const pool = [...shuffled.filter(open), ...shuffled.filter((s) => !open(s))];
     const chosen = [];
-    for (const s of pool) {
-      if (chosen.length >= this.boxes.length) break;
-      if (chosen.every((c) => c.pos.distanceTo(s.pos) >= MIN_SPACING)) chosen.push(s);
+    for (const gap of [MIN_SPACING, MIN_SPACING * 0.6]) {
+      for (const s of pool) {
+        if (chosen.length >= this.boxes.length) break;
+        if (!chosen.includes(s) && chosen.every((c) => c.pos.distanceTo(s.pos) >= gap)) chosen.push(s);
+      }
     }
     this.boxes.forEach((b, i) => {
       const s = chosen[i];
@@ -407,10 +416,7 @@ export class MysteryBoxes {
         b.group.visible = false;
         return;
       }
-      // The beam stops at whatever is overhead (a floor above, a roof)
-      _v.set(s.pos.x, s.pos.y + HGT + 0.05, s.pos.z);
-      const ceiling = this.world.raycastWorld(_v, UP, BEAM_HEIGHT);
-      b.place(s.pos, s.wall, ceiling);
+      b.place(s.pos, s.wall, s.sky);
       colliders.push(b.collider);
     });
   }
