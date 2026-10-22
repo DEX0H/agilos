@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { mergeByMaterial } from './merge.js';
 
 // Shared model loading. Each file is fetched once; callers clone what they need.
 // All models are CC0 by Quaternius (see public/models/CREDITS.md):
@@ -46,13 +47,15 @@ function gunMaterial(m) {
 }
 
 export function normalizeGun(source, length) {
-  const gun = source.clone(true);
-  gun.traverse((o) => {
+  const parts = source.clone(true);
+  parts.traverse((o) => {
     if (o.isMesh) {
       o.castShadow = true;
       o.material = Array.isArray(o.material) ? o.material.map(gunMaterial) : gunMaterial(o.material);
     }
   });
+  // Dozens of small meshes become one per material: far fewer draw calls per gun
+  const gun = mergeByMaterial(parts);
   gun.updateMatrixWorld(true);
 
   // All vertex positions in the gun's own space

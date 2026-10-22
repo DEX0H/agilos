@@ -26,6 +26,7 @@ import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
 import { createDust } from './dust.js';
 import { DeathCam } from './deathcam.js';
+import { mergeStatic } from './merge.js';
 
 // Low-latency canvas: `desynchronized` lets the browser present frames without
 // waiting on the page compositor where supported (Chrome, Edge).
@@ -63,8 +64,11 @@ scene.add(camera); // the gun viewmodel is a child of the camera
 // ---- Game world ----
 const arena = buildArena(scene);
 const { colliders, playerSpawn, mobSpawns, navPoints, navLinks, navJumps } = arena;
-// City facades and details load in the background; the plain boxes show until then
-dressCity(scene, arena).catch((e) => console.warn('City dressing failed to load; keeping plain walls', e));
+// City facades and details load in the background; the plain boxes show until then.
+// Then the arena's hundreds of static meshes are merged into a few draw calls.
+dressCity(scene, arena)
+  .catch((e) => console.warn('City dressing failed to load; keeping plain walls', e))
+  .finally(() => { arena.mergeInfo = mergeStatic(arena.group); });
 const world = new World(scene, colliders);
 const player = new Player(camera, colliders, playerSpawn);
 world.add(player);
@@ -159,6 +163,24 @@ const reloadHint = document.getElementById('reloadhint');
 const scope = document.getElementById('scope');
 buildControlsPanel(document.getElementById('settings'), document.getElementById('controlstext'));
 
+// The HUD changes every frame, but most values don't: only touch the DOM when they do,
+// so the browser isn't re-styling the page on every frame
+function css(el, prop, v) {
+  const c = el.__css || (el.__css = {});
+  if (c[prop] === v) return;
+  c[prop] = v;
+  if (prop.startsWith('--')) el.style.setProperty(prop, v);
+  else el.style[prop] = v;
+}
+function text(el, v) {
+  if (el.__text === v) return;
+  el.__text = v;
+  el.textContent = v;
+}
+function cls(el, v) {
+  if (el.className !== v) el.className = v;
+}
+
 let toastTimer = 0;
 function showToast(text, color = '#fff', time = 1.5) {
   toast.textContent = text;
@@ -192,14 +214,18 @@ function setWeapon(w) {
   knife.model.visible = w === knife;
 }
 
-// P toggles quality: high = ambient occlusion and sharper pixels, low = fastest frames
-let quality = 'high';
+// P toggles quality. Fast (the default) skips ambient occlusion, which alone costs about
+// as much as the rest of the frame, and renders at 1 pixel per CSS pixel. High adds both.
+const QUALITY_KEY = 'agilos.quality.v1';
+let quality = 'fast';
 function setQuality(q) {
   quality = q;
   renderer.setPixelRatio(q === 'high' ? HIGH_PR : 1);
   postfx.gtao.enabled = q === 'high';
   postfx.resize(window.innerWidth, window.innerHeight);
+  try { localStorage.setItem(QUALITY_KEY, q); } catch { /* not saved */ }
 }
+setQuality((() => { try { return localStorage.getItem(QUALITY_KEY) === 'high' ? 'high' : 'fast'; } catch { return 'fast'; } })());
 
 document.addEventListener('keydown', (e) => {
   if (capture.action) return; // a key is being rebound
@@ -208,7 +234,10 @@ document.addEventListener('keydown', (e) => {
   if (e.code === b.weapon2) setWeapon(knife);
   if (e.code === b.flip && !e.repeat) knife.flip();
   if (e.code === b.interact && !e.repeat) useBox();
-  if (e.code === b.quality && !e.repeat) setQuality(quality === 'high' ? 'low' : 'high');
+  if (e.code === b.quality && !e.repeat) {
+    setQuality(quality === 'high' ? 'fast' : 'high');
+    showToast(quality === 'high' ? 'QUALITY: HIGH (ambient occlusion)' : 'QUALITY: FAST');
+  }
   if (e.code === b.sensDown || e.code === b.sensUp) {
     setSens(settings.sens + (e.code === b.sensUp ? 0.1 : -0.1));
     showToast(`Sensitivity ${settings.sens.toFixed(2)}`);
@@ -321,28 +350,28 @@ let pipsShown = -1;
 function updateAmmo() {
   const knifeOut = active === knife;
   const spec = weapon.spec;
-  ammoName.textContent = knifeOut ? 'Knife' : spec.label;
-  ammoName.style.setProperty('--rarity', knifeOut || !spec.rarity ? '#d9d9d9' : RARITY_COLORS[spec.rarity]);
-  ammoRow.style.display = knifeOut ? 'none' : 'flex';
-  pips.style.display = knifeOut ? 'none' : 'flex';
+  text(ammoName, knifeOut ? 'Knife' : spec.label);
+  css(ammoName, '--rarity', knifeOut || !spec.rarity ? '#d9d9d9' : RARITY_COLORS[spec.rarity]);
+  css(ammoRow, 'display', knifeOut ? 'none' : 'flex');
+  css(pips, 'display', knifeOut ? 'none' : 'flex');
   const reloading = !knifeOut && weapon.reloadTimer > 0;
-  reloadBar.style.opacity = reloading ? '1' : '0';
-  if (reloading) reloadFill.style.width = `${(1 - weapon.reloadTimer / spec.reloadTime) * 100}%`;
+  css(reloadBar, 'opacity', reloading ? '1' : '0');
+  if (reloading) css(reloadFill, 'width', `${(1 - weapon.reloadTimer / spec.reloadTime) * 100}%`);
 
   let hint = '';
   if (!knifeOut && !player.dead) {
     if (weapon.ammo === 0 && weapon.reserve === 0) hint = 'NO AMMO';
     else if (!reloading && weapon.ammo <= Math.ceil(weapon.magSize / 4)) hint = `RELOAD  [${bindLabel('reload')}]`;
   }
-  reloadHint.textContent = hint;
-  reloadHint.className = hint === 'NO AMMO' ? 'empty' : '';
-  reloadHint.style.opacity = hint ? '1' : '0';
+  text(reloadHint, hint);
+  cls(reloadHint, hint === 'NO AMMO' ? 'empty' : '');
+  css(reloadHint, 'opacity', hint ? '1' : '0');
   if (knifeOut) return;
 
   const low = weapon.ammo <= Math.ceil(weapon.magSize / 4);
-  ammoMag.textContent = String(weapon.ammo);
-  ammoMag.className = low ? 'low' : '';
-  ammoRes.textContent = `/ ${weapon.reserve === Infinity ? '∞' : weapon.reserve}`;
+  text(ammoMag, String(weapon.ammo));
+  cls(ammoMag, low ? 'low' : '');
+  text(ammoRes, `/ ${weapon.reserve === Infinity ? '∞' : weapon.reserve}`);
   if (pipsFor !== weapon.gun) {
     pipsFor = weapon.gun;
     pipsShown = -1;
@@ -376,7 +405,17 @@ if (window.agilosDesktop) {
     box.checked = info.autoUpdate;
     box.addEventListener('change', () => window.agilosDesktop.setAutoUpdate(box.checked));
     label.append(box, ' Check for updates (always stay on the latest version)');
-    desktopBox.append(ver, label);
+    // Uncapped frames: lowest input lag, applies on the next launch
+    const label2 = document.createElement('label');
+    const box2 = document.createElement('input');
+    box2.type = 'checkbox';
+    box2.checked = info.uncapped;
+    box2.addEventListener('change', () => {
+      if (window.agilosDesktop.setUncapped) window.agilosDesktop.setUncapped(box2.checked);
+      showToast('Frame rate setting applies the next time you start the game', '#ffd27a', 3);
+    });
+    label2.append(box2, ' Uncapped frame rate, no vsync (lowest input lag)');
+    desktopBox.append(ver, label, label2);
   }).catch(() => {});
   window.agilosDesktop.onUpdateReady((v) => {
     showToast(`Update ${v} downloaded: it installs when you close the game`, '#ffd27a', 6);
@@ -462,16 +501,16 @@ function drawMinimap() {
   // Ring round and timer under the map
   if (live && match.state !== 'countdown') {
     if (z.phase >= match.rounds) {
-      ringInfo.textContent = 'RING CLOSED';
-      ringInfo.className = 'closing';
+      text(ringInfo, 'RING CLOSED');
+      cls(ringInfo, 'closing');
     } else {
       const s = Math.max(0, Math.ceil(z.phaseTime));
       const t = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-      ringInfo.textContent = z.shrinking ? `RING ${z.phase + 1}/${match.rounds} CLOSING ${t}` : `RING ${z.phase + 1}/${match.rounds} IN ${t}`;
-      ringInfo.className = z.shrinking ? 'closing' : '';
+      text(ringInfo, z.shrinking ? `RING ${z.phase + 1}/${match.rounds} CLOSING ${t}` : `RING ${z.phase + 1}/${match.rounds} IN ${t}`);
+      cls(ringInfo, z.shrinking ? 'closing' : '');
     }
   } else {
-    ringInfo.textContent = '';
+    text(ringInfo, '');
   }
 }
 let mapFrame = 0;
@@ -550,8 +589,8 @@ function updateCountdown(dt) {
   }
   goTimer = Math.max(0, goTimer - dt);
   if (!text && goTimer > 0) text = 'GO';
-  countdownEl.style.display = text ? 'flex' : 'none';
-  countdownEl.lastElementChild.style.visibility = text === 'GO' ? 'hidden' : 'visible';
+  css(countdownEl, 'display', text ? 'flex' : 'none');
+  css(countdownEl.lastElementChild, 'visibility', text === 'GO' ? 'hidden' : 'visible');
   if (text !== cdShown) {
     cdShown = text;
     countdownNum.textContent = text;
@@ -641,12 +680,12 @@ function frame(now) {
     const half = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     gap = 3 + Math.tan(weapon.currentSpread()) / half * (window.innerHeight / 2);
   }
-  crosshair.style.setProperty('--gap', `${Math.min(80, gap).toFixed(1)}px`);
+  css(crosshair, '--gap', `${Math.min(80, gap).toFixed(1)}px`);
 
   // Scope overlay replaces the crosshair while zoomed in
   const scoped = active === weapon && weapon.scoped;
-  scope.style.opacity = scoped ? '1' : '0';
-  crosshair.style.visibility = scoped ? 'hidden' : 'visible';
+  css(scope, 'opacity', scoped ? '1' : '0');
+  css(crosshair, 'visibility', scoped ? 'hidden' : 'visible');
 
   // Mystery box prompt
   let promptText = '';
@@ -657,43 +696,43 @@ function frame(now) {
       else if (box.cooldownLeft > 0) promptText = `RECHARGING  ${Math.ceil(box.cooldownLeft)}s`;
     }
   }
-  promptEl.textContent = promptText;
-  promptEl.style.opacity = promptText ? '1' : '0';
+  text(promptEl, promptText);
+  css(promptEl, 'opacity', promptText ? '1' : '0');
 
   toastTimer = Math.max(0, toastTimer - dt);
-  toast.style.opacity = String(Math.min(1, toastTimer * 2));
-  shieldTint.style.opacity = player.shielded && !player.dead ? '1' : '0';
+  css(toast, 'opacity', Math.min(1, toastTimer * 2).toFixed(2));
+  css(shieldTint, 'opacity', player.shielded && !player.dead ? '1' : '0');
 
   // Health bar: green > 60%, yellow > 30%, red below; blue overlay while the spawn shield is up
   const hpFrac = Math.max(0, player.health / player.maxHealth);
-  hpFill.style.width = `${hpFrac * 100}%`;
-  hpFill.style.background = hpFrac > 0.6 ? '#5fd35a' : hpFrac > 0.3 ? '#e6c33a' : '#e2452f';
-  hpShield.style.opacity = player.shielded && !player.dead ? '1' : '0';
-  hpNum.textContent = String(Math.ceil(player.health));
+  css(hpFill, 'width', `${(hpFrac * 100).toFixed(1)}%`);
+  css(hpFill, 'background', hpFrac > 0.6 ? '#5fd35a' : hpFrac > 0.3 ? '#e6c33a' : '#e2452f');
+  css(hpShield, 'opacity', player.shielded && !player.dead ? '1' : '0');
+  text(hpNum, String(Math.ceil(player.health)));
 
   hitmarkerTimer = Math.max(0, hitmarkerTimer - dt);
-  hitmarker.style.opacity = String(hitmarkerTimer / 0.15);
-  damageVignette.style.opacity = String(player.damageFlash / 0.35);
+  css(hitmarker, 'opacity', (hitmarkerTimer / 0.15).toFixed(2));
+  css(damageVignette, 'opacity', (player.damageFlash / 0.35).toFixed(2));
   const cardOn = updateDeathCard();
   updateCountdown(dt);
   updateMarkers();
   document.body.classList.toggle('dead', player.dead);
   // The old text banner only for what the card and countdown don't cover
   const bannerText = cardOn || player.dead || match.state === 'countdown' ? '' : match.bannerText();
-  banner.style.display = bannerText ? 'flex' : 'none';
-  banner.textContent = bannerText;
+  css(banner, 'display', bannerText ? 'flex' : 'none');
+  text(banner, bannerText);
 
   updateAmmo();
   if (++mapFrame % 3 === 0) drawMinimap();
   const v = player.velocity;
   const shield = player.shielded && !player.dead ? `   SHIELD ${Math.ceil(player.shieldTimer)}s (firing drops it)` : '';
-  hud.textContent =
+  if (mapFrame % 6 === 0) text(hud,
     `HP      ${Math.ceil(player.health)}${shield}\n` +
     `KILLS   ${player.kills}   alive ${match.aliveCount()}/${match.total}\n` +
     (match.zoneText() ? `${match.zoneText()}\n` : '') +
     `speed   ${Math.hypot(v.x, v.z).toFixed(1)} m/s   height ${player.position.y.toFixed(1)} m\n` +
     `state   ${player.state}   double jump ${player.canDouble ? 'ready' : 'used'}\n` +
-    `fps     ${fps.toFixed(0)}   quality ${quality} (${bindLabel('quality')})   sens ${settings.sens.toFixed(2)} (${bindLabel('sensDown')} ${bindLabel('sensUp')})`;
+    `fps     ${fps.toFixed(0)}   quality ${quality} (${bindLabel('quality')})   sens ${settings.sens.toFixed(2)} (${bindLabel('sensDown')} ${bindLabel('sensUp')})`);
 
   postfx.composer.render(dt);
   requestAnimationFrame(frame);

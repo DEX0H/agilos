@@ -188,8 +188,9 @@ only their own documents) and the key's API restrictions.
 The Windows app (`electron/`) adds a desktop attack surface, hardened as follows:
 
 - **Renderer locked down:** `sandbox`, `contextIsolation`, no `nodeIntegration`. The page
-  gets only a 3-function bridge (`electron/preload.cjs`): version, the update setting, an
-  update notice.
+  gets only a small bridge (`electron/preload.cjs`): version, the update and frame-rate
+  settings, an update notice, and "restart to update". The frame-rate setting only turns
+  vsync off (Chromium switches `disable-gpu-vsync`, `disable-frame-rate-limit`).
 - **Local files only:** the game loads from a private `app://agilos/` protocol that serves
   files from inside the app's `dist/` folder and refuses paths outside it. The page's
   Content-Security-Policy still applies.
