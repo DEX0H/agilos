@@ -16,6 +16,12 @@ const VIEW_BASE_Y = -0.2;
 const DRAW_TIME = 0.22;         // the new gun swings up; it can fire straight away
 const BASE_FOV = 75;
 const SCOPE_SPEED = 12;         // how fast the scope zooms in and out
+const ADS_SPEED = 16;           // how fast the gun comes up to your eye (about 0.15 s)
+const ADS_EYE = 0.1;            // the back of the gun sits this far in front of your eye
+const _inv = new THREE.Matrix4();
+const _rel = new THREE.Matrix4();
+const _bb = new THREE.Box3();
+const ease = (t) => t * t * (3 - 2 * t);
 
 // Where each model sits inside the viewmodel group (longer guns sit farther back)
 const VIEW_OFFSETS = {
@@ -45,8 +51,10 @@ export class Firearm {
     this.flashTimer = 0;
     this.drawTimer = 0;
     this.triggerHeld = false;  // held left mouse, for automatic weapons
-    this.scopeHeld = false;    // held right mouse, for scoped weapons
-    this.zoom = 0;             // 0 = hip, 1 = fully scoped
+    this.scopeHeld = false;    // right mouse held: aim down sights (the sniper scopes in)
+    this.aim = 0;              // 0 = hip, 1 = aiming down sights
+    this.zoom = 0;             // 0 = hip, 1 = fully scoped (scoped weapons only)
+    this.sightCache = null;
     this.boxModels = {};       // built on first use
 
     // First-person viewmodel, parented to the camera
@@ -128,6 +136,7 @@ export class Firearm {
     this.gun = new GunState(spec, this.player);
     this.drawTimer = DRAW_TIME;
     this.zoom = 0;
+    this.aim = 0;
     this.spray = 0;
     for (const k of Object.values(this.kick)) { k[0] = 0; k[1] = 0; }
     this.pistol.visible = spec.model === 'pistol';
@@ -158,6 +167,36 @@ export class Firearm {
 
   get spec() { return this.gun.spec; }
   get scoped() { return this.zoom > 0.85; }
+  get aiming() { return this.aim > 0.6; }
+
+  // Where the viewmodel group goes so the top of the gun (its sights) sits exactly on the
+  // centre of the screen. Measured from the gun's own meshes, so it fits every model,
+  // and re-measured when a real model replaces the simple stand-in.
+  sight() {
+    const cur = this.current;
+    let n = 0;
+    cur.traverse((o) => { if (o.isMesh && o.visible) n++; });
+    const key = `${cur.uuid}|${n}|${this.gun.spec.name}`;
+    if (this.sightCache && this.sightCache.key === key) return this.sightCache;
+    this.model.updateMatrixWorld(true);
+    _inv.copy(this.model.matrixWorld).invert();
+    const box = new THREE.Box3();
+    cur.traverse((o) => {
+      if (!o.isMesh || o === this.flash) return;
+      for (let p = o; p && p !== this.model; p = p.parent) if (!p.visible) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      _bb.copy(o.geometry.boundingBox).applyMatrix4(_rel.multiplyMatrices(_inv, o.matrixWorld));
+      box.union(_bb);
+    });
+    if (box.isEmpty()) box.set(new THREE.Vector3(-0.03, -0.1, -0.15), new THREE.Vector3(0.03, 0.05, 0.1));
+    this.sightCache = {
+      key,
+      x: -(box.min.x + box.max.x) / 2,
+      y: -box.max.y + 0.004,
+      z: -(this.gun.spec.adsEye ?? ADS_EYE) - box.max.z,
+    };
+    return this.sightCache;
+  }
   get ammo() { return this.gun.ammo; }
   get magSize() { return this.gun.magSize; }
   get reserve() { return this.gun.reserve; }
@@ -194,15 +233,15 @@ export class Firearm {
     const n = this.spray++;
     this.sinceShot = 0;
     const p = this.player;
-    const steady = p.state === 'crouch' || p.sliding ? 0.75 : 1;
+    const steady = (p.state === 'crouch' || p.sliding ? 0.75 : 1) * (this.aiming ? 0.85 : 1);
     let up = k.up;
     if (p.recoilPitch > k.maxClimb) up *= 0.2;
     const sway = n >= k.sideStart ? k.side * Math.sin((n - k.sideStart) * 0.55 + 0.9) : 0;
     const side = sway + (Math.random() - 0.5) * k.jitter;
     const roll = (Math.random() - 0.5) * 2 * k.roll;
     p.addRecoil(up * steady, side * steady, k.recover, k.delay, roll);
-    // The gun itself: snaps back and flips up, then springs home
-    const scope = this.scoped ? 0.3 : 1;
+    // The gun itself: snaps back and flips up, then springs home (less when aiming)
+    const scope = this.scoped ? 0.3 : this.aiming ? 0.55 : 1;
     this.kick.back[0] += k.vmBack * scope;
     this.kick.flip[0] += k.vmFlip * scope * (0.85 + Math.random() * 0.3);
     this.kick.side[0] += (Math.random() - 0.5) * k.vmFlip * 0.4;
@@ -254,19 +293,24 @@ export class Firearm {
     this.gun.update(dt);
     const spec = this.gun.spec;
 
-    // Scope: zoom the camera, slow the mouse to match, hide the gun behind the scope overlay
-    const wantZoom = spec.scope && this.scopeHeld && this.model.visible && !this.player.dead
-      && this.gun.reloadTimer <= 0 ? 1 : 0;
-    this.zoom += (wantZoom - this.zoom) * Math.min(1, dt * SCOPE_SPEED);
-    if (Math.abs(wantZoom - this.zoom) < 0.01) this.zoom = wantZoom;
-    const fov = BASE_FOV + ((spec.scopeFov || BASE_FOV) - BASE_FOV) * this.zoom;
+    // Aim down sights while right mouse is held (not during a reload or the draw). Every
+    // gun zooms in a little and brings its sights to the centre; the sniper scopes in.
+    const wantAim = this.scopeHeld && this.model.visible && !this.player.dead
+      && this.gun.reloadTimer <= 0 && this.drawTimer <= 0.05 ? 1 : 0;
+    this.aim += (wantAim - this.aim) * Math.min(1, dt * (spec.scope ? SCOPE_SPEED : ADS_SPEED));
+    if (Math.abs(wantAim - this.aim) < 0.01) this.aim = wantAim;
+    this.zoom = spec.scope ? this.aim : 0;
+    const aimFov = spec.scope ? spec.scopeFov : spec.adsFov || 62;
+    const fov = BASE_FOV + (aimFov - BASE_FOV) * (spec.scope ? this.aim : ease(this.aim));
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
     }
+    // The mouse slows with the zoom so the same hand movement covers the same on screen
     const half = (f) => Math.tan(THREE.MathUtils.degToRad(f / 2));
     this.player.sensScale = half(fov) / half(BASE_FOV);
     this.player.ads = this.scoped;
+    this.player.aiming = this.aiming;
 
     // A burst ends once the trigger has been off for a moment
     this.sinceShot += dt;
@@ -305,18 +349,35 @@ export class Firearm {
     // A new gun swings up from below
     this.drawTimer = Math.max(0, this.drawTimer - dt);
     const draw = this.drawTimer / DRAW_TIME;
-    this.model.position.z = VIEW_BASE_Z + this.kick.back[0];
-    this.model.position.y = VIEW_BASE_Y - 0.22 * draw * draw - 0.12 * this.zoom + bobY + this.kick.flip[0] * 0.04;
+    const pos = this.model.position;
+    const rot = this.model.rotation;
+    pos.z = VIEW_BASE_Z;
+    pos.y = VIEW_BASE_Y - 0.22 * draw * draw - 0.12 * this.zoom;
     // Behind the scope the gun itself is hidden (the overlay draws the scope)
     this.current.visible = this.zoom < 0.6;
 
     this.animateReload(draw);
-    // Recoil, sway and bob on top of the reload pose
-    this.model.position.x += bobX + this.sway.yaw * 0.12;
-    this.model.position.y += this.sway.pitch * 0.08;
-    this.model.rotation.x += this.kick.flip[0] + this.sway.pitch * 0.5;
-    this.model.rotation.y += this.kick.side[0] + this.sway.yaw * 0.6;
-    this.model.rotation.z += this.kick.roll[0] + this.sway.yaw * 0.4;
+
+    // Aim down sights: the gun moves from the hip to the centre, square to the view
+    const k = spec.scope ? 0 : ease(this.aim);
+    if (k > 0) {
+      const s = this.sight();
+      pos.x += (s.x - pos.x) * k;
+      pos.y += (s.y - pos.y) * k;
+      pos.z += (s.z - pos.z) * k;
+      rot.x *= 1 - k;
+      rot.y *= 1 - k;
+      rot.z *= 1 - k;
+    }
+
+    // Recoil, sway and bob on top; much steadier while aiming
+    const loose = 1 - 0.8 * k;
+    pos.x += (bobX + this.sway.yaw * 0.12) * loose;
+    pos.y += (bobY + this.sway.pitch * 0.08) * loose + this.kick.flip[0] * 0.04;
+    pos.z += this.kick.back[0];
+    rot.x += this.kick.flip[0] + this.sway.pitch * 0.5 * loose;
+    rot.y += this.kick.side[0] + this.sway.yaw * 0.6 * loose;
+    rot.z += this.kick.roll[0] + this.sway.yaw * 0.4 * loose;
 
     this.flashTimer -= dt;
     this.flash.visible = this.flashTimer > 0;
