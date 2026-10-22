@@ -7,7 +7,10 @@ import { buildGunModel } from './gunmodels.js';
 
 // The player's gun slot: first-person viewmodel and effects on top of the shared GunState.
 // It starts with the handgun; a mystery box swaps in an SMG, assault rifle or sniper.
-const RECOIL_YAW_JITTER = 0.4;  // sideways kick as a fraction of the upward kick
+const KICK_STIFF = 320;         // the gun's recoil spring: stiffness and damping
+const KICK_DAMP = 30;
+const SWAY = 0.9;               // the gun lags behind your aim by this much of the turn
+const SWAY_MAX = 0.06;          // radians
 const VIEW_BASE_Z = -0.42;
 const VIEW_BASE_Y = -0.2;
 const DRAW_TIME = 0.22;         // the new gun swings up; it can fire straight away
@@ -31,7 +34,14 @@ export class Firearm {
     this.scene = scene;
     this.player = player;
     this.gun = new GunState(HANDGUN, player);
-    this.viewKick = 0;
+    // Recoil in your hands: a damped spring per axis (back, muzzle flip, sideways, roll)
+    this.kick = { back: [0, 0], flip: [0, 0], side: [0, 0], roll: [0, 0] };
+    this.spray = 0;            // shots in the current burst (drives the recoil pattern)
+    this.sinceShot = 9;
+    this.sway = { yaw: 0, pitch: 0 };
+    this.lastAim = null;
+    this.bob = 0;              // walk cycle phase
+    this.bobAmt = 0;
     this.flashTimer = 0;
     this.drawTimer = 0;
     this.triggerHeld = false;  // held left mouse, for automatic weapons
@@ -118,6 +128,8 @@ export class Firearm {
     this.gun = new GunState(spec, this.player);
     this.drawTimer = DRAW_TIME;
     this.zoom = 0;
+    this.spray = 0;
+    for (const k of Object.values(this.kick)) { k[0] = 0; k[1] = 0; }
     this.pistol.visible = spec.model === 'pistol';
     this.entry = null;
     for (const m of Object.values(this.boxModels)) m.object.visible = false;
@@ -167,13 +179,34 @@ export class Firearm {
     if (!r.fired) return r;
 
     const spec = this.gun.spec;
-    this.viewKick = spec.auto ? 0.025 : 0.05;
     this.flashTimer = 0.05;
     this.flash.visible = true;
-    this.player.addRecoil(spec.recoil, (Math.random() - 0.5) * spec.recoil * RECOIL_YAW_JITTER);
+    this.applyRecoil(spec.kick);
     this.muzzle.getWorldPosition(_muzzle);
     world.addTracer(_muzzle, r.end);
     return r;
+  }
+
+  // One shot's recoil. The view climbs a fixed amount per shot (less once the climb cap is
+  // reached), and after a few shots in a spray it sways side to side in the same pattern
+  // every time, so it can be learned and pulled against. Crouching or sliding softens it.
+  applyRecoil(k) {
+    const n = this.spray++;
+    this.sinceShot = 0;
+    const p = this.player;
+    const steady = p.state === 'crouch' || p.sliding ? 0.75 : 1;
+    let up = k.up;
+    if (p.recoilPitch > k.maxClimb) up *= 0.2;
+    const sway = n >= k.sideStart ? k.side * Math.sin((n - k.sideStart) * 0.55 + 0.9) : 0;
+    const side = sway + (Math.random() - 0.5) * k.jitter;
+    const roll = (Math.random() - 0.5) * 2 * k.roll;
+    p.addRecoil(up * steady, side * steady, k.recover, k.delay, roll);
+    // The gun itself: snaps back and flips up, then springs home
+    const scope = this.scoped ? 0.3 : 1;
+    this.kick.back[0] += k.vmBack * scope;
+    this.kick.flip[0] += k.vmFlip * scope * (0.85 + Math.random() * 0.3);
+    this.kick.side[0] += (Math.random() - 0.5) * k.vmFlip * 0.4;
+    this.kick.roll[0] += (Math.random() - 0.5) * 2 * k.vmRoll;
   }
 
   // Drop the scope and the trigger (weapon switch, death, menu)
@@ -235,16 +268,55 @@ export class Firearm {
     this.player.sensScale = half(fov) / half(BASE_FOV);
     this.player.ads = this.scoped;
 
-    // Recoil kick on the viewmodel settles back; a new gun swings up from below
-    this.viewKick *= Math.exp(-14 * dt);
+    // A burst ends once the trigger has been off for a moment
+    this.sinceShot += dt;
+    if (this.sinceShot > Math.max(0.22, spec.fireInterval * 1.6)) this.spray = 0;
+
+    // Recoil springs, integrated in small steps so they stay stable at low frame rates
+    const steps = Math.max(1, Math.ceil(dt / (1 / 240)));
+    const h = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      for (const s of Object.values(this.kick)) {
+        s[1] += (-KICK_STIFF * s[0] - KICK_DAMP * s[1]) * h;
+        s[0] += s[1] * h;
+      }
+    }
+
+    // Sway: the gun trails a little behind fast turns and catches up
+    const p = this.player;
+    if (!this.lastAim) this.lastAim = { yaw: p.yaw, pitch: p.pitch };
+    const dYaw = p.yaw - this.lastAim.yaw;
+    const dPitch = p.pitch - this.lastAim.pitch;
+    this.lastAim.yaw = p.yaw;
+    this.lastAim.pitch = p.pitch;
+    const clamp = THREE.MathUtils.clamp;
+    const swayK = (1 - this.zoom) * SWAY;
+    this.sway.yaw += (clamp(-dYaw * swayK * 6, -SWAY_MAX, SWAY_MAX) - this.sway.yaw) * Math.min(1, dt * 12);
+    this.sway.pitch += (clamp(-dPitch * swayK * 6, -SWAY_MAX, SWAY_MAX) - this.sway.pitch) * Math.min(1, dt * 12);
+
+    // Bob: a gentle figure-eight with your steps on the ground
+    const hs = Math.hypot(p.velocity.x, p.velocity.z);
+    const walking = p.onGround && !p.sliding && hs > 0.6 && !p.dead;
+    this.bobAmt += ((walking ? Math.min(1, hs / 10) : 0) - this.bobAmt) * Math.min(1, dt * 8);
+    this.bob += dt * (4 + hs * 0.9);
+    const bobX = Math.sin(this.bob) * 0.008 * this.bobAmt * (1 - this.zoom);
+    const bobY = -Math.abs(Math.cos(this.bob)) * 0.01 * this.bobAmt * (1 - this.zoom);
+
+    // A new gun swings up from below
     this.drawTimer = Math.max(0, this.drawTimer - dt);
     const draw = this.drawTimer / DRAW_TIME;
-    this.model.position.z = VIEW_BASE_Z + this.viewKick;
-    this.model.position.y = VIEW_BASE_Y - 0.22 * draw * draw - 0.12 * this.zoom;
+    this.model.position.z = VIEW_BASE_Z + this.kick.back[0];
+    this.model.position.y = VIEW_BASE_Y - 0.22 * draw * draw - 0.12 * this.zoom + bobY + this.kick.flip[0] * 0.04;
     // Behind the scope the gun itself is hidden (the overlay draws the scope)
     this.current.visible = this.zoom < 0.6;
 
     this.animateReload(draw);
+    // Recoil, sway and bob on top of the reload pose
+    this.model.position.x += bobX + this.sway.yaw * 0.12;
+    this.model.position.y += this.sway.pitch * 0.08;
+    this.model.rotation.x += this.kick.flip[0] + this.sway.pitch * 0.5;
+    this.model.rotation.y += this.kick.side[0] + this.sway.yaw * 0.6;
+    this.model.rotation.z += this.kick.roll[0] + this.sway.yaw * 0.4;
 
     this.flashTimer -= dt;
     this.flash.visible = this.flashTimer > 0;
