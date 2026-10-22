@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import { basisQuat } from './fparms.js';
+import { CURLS } from './weapon.js';
+
+const _sh = new THREE.Vector3();
+const _po = new THREE.Vector3();
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // Combat knife: melee slash in a short arc, plus a flip animation (F, or automatically when idle).
@@ -71,6 +76,16 @@ export class Knife {
     bladeGroup.add(blade, blade2, handle, guard, pommel);
     bladeGroup.rotation.y = Math.PI / 2; // +x (length) becomes -z (forward)
     this.pivot.add(bladeGroup);
+    // Gloved hand on the handle (fingers under, thumb over), and the arm behind it
+    // Grip target for the first-person arm: follows slashes but not the end-over-end
+    // flip (the knife twirls in the hand)
+    this.grip = new THREE.Object3D();
+    this.grip.position.set(0.014, -0.07, 0.075);
+    basisQuat(new THREE.Vector3(0, 1, -0.15), new THREE.Vector3(-1, 0, 0), this.grip.quaternion);
+    this.handPivot = new THREE.Group();
+    this.handPivot.rotation.order = 'XZY';
+    this.handPivot.add(this.grip);
+    this.model.add(this.handPivot);
     this.pivot.rotation.order = 'XZY';
 
     this.model.position.copy(BASE);
@@ -150,6 +165,14 @@ export class Knife {
     }
 
     this.pivot.rotation.set(rotX, rotY, rotZ);
+    this.handPivot.rotation.set(0, rotY, rotZ);
     this.model.position.set(BASE.x, BASE.y + lift, BASE.z + push);
+  }
+
+  armPose() {
+    return {
+      right: { target: this.grip, shoulder: _sh.set(0.24, -0.34, 0.16), pole: _po.set(0.5, -0.6, 0.1), curl: CURLS.fist },
+      left: null,
+    };
   }
 }

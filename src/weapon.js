@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GunState, HANDGUN } from './gun.js';
 import { settings, capture } from './settings.js';
 import { buildViewGun } from './viewguns.js';
+import { basisQuat } from './fparms.js';
 
 // The player's gun slot: first-person viewmodel and effects on top of the shared GunState.
 // It starts with the handgun; a mystery box swaps in an SMG, assault rifle or sniper.
@@ -17,6 +18,21 @@ const SCOPE_SPEED = 12;         // how fast the scope zooms in and out
 const ADS_SPEED = 16;           // how fast the gun comes up to your eye (about 0.15 s)
 const ease = (t) => t * t * (3 - 2 * t);
 const _sp = new THREE.Vector3();
+const _hp = new THREE.Vector3();
+const _s1 = new THREE.Vector3();
+const _s2 = new THREE.Vector3();
+const _p1 = new THREE.Vector3();
+const _p2 = new THREE.Vector3();
+const _vec = (a, v) => v.set(a[0], a[1], a[2]);
+// Finger curls (radians per joint: base, middle, tip), for index, middle, ring, pinky and thumb
+const grip = [1.2, 1.3, 0.85];
+export const CURLS = {
+  trigger: { fingers: [[0.35, 0.55, 0.35], grip, grip, grip], thumb: [0.25, 0.45, 0.3] },
+  support: { fingers: [[0.95, 1.05, 0.7], [1, 1.1, 0.75], [1, 1.1, 0.75], [0.95, 1.05, 0.7]], thumb: [0.3, 0.3, 0.2] },
+  cup: { fingers: [[0.9, 1, 0.7], [0.95, 1.05, 0.7], [0.95, 1.05, 0.7], [0.9, 1, 0.7]], thumb: [0.35, 0.3, 0.2] },
+  mag: { fingers: [[0.6, 0.7, 0.5], [0.65, 0.75, 0.5], [0.65, 0.75, 0.5], [0.6, 0.7, 0.5]], thumb: [0.4, 0.4, 0.3] },
+  fist: { fingers: [[1.25, 1.35, 0.9], grip, grip, grip], thumb: [0.5, 0.6, 0.4] },
+};
 const _X = new THREE.Vector3(1, 0, 0);
 
 const _origin = new THREE.Vector3();
@@ -59,11 +75,43 @@ export class Firearm {
     camera.add(this.model);
     this.views = {};
     this.slideKick = 0;
+    this.leftOnMag = 0;
     this.equip(HANDGUN);
 
     document.addEventListener('keydown', (e) => {
       if (!capture.action && e.code === settings.binds.reload && !e.repeat) this.gun.reload();
     });
+  }
+
+  // Grip targets for the first-person arms (fparms.js): Object3Ds on the gun, so the
+  // hands follow it. The left one moves to the magazine during a reload.
+  addHands(entry) {
+    const A = entry.arms;
+    const target = (def) => {
+      const o = new THREE.Object3D();
+      o.position.set(...def.pos);
+      basisQuat(new THREE.Vector3(...def.f), new THREE.Vector3(...def.n), o.quaternion);
+      entry.object.add(o);
+      return o;
+    };
+    entry.tR = target(A.right);
+    entry.tL = target(A.left);
+    entry.leftSupport = { pos: entry.tL.position.clone(), quat: entry.tL.quaternion.clone() };
+    entry.leftMag = {
+      pos: new THREE.Vector3(...A.mag.pos),
+      quat: basisQuat(new THREE.Vector3(...A.mag.f), new THREE.Vector3(...A.mag.n)),
+    };
+  }
+
+  // Pose for the arms this frame
+  armPose() {
+    const e = this.entry;
+    const A = e.arms;
+    const reloading = this.gun.reloadTimer > 0;
+    return {
+      right: { target: e.tR, shoulder: _vec(A.right.shoulder, _s1), pole: _vec(A.right.pole, _p1), curl: CURLS[A.right.curl] },
+      left: { target: e.tL, shoulder: _vec(A.left.shoulder, _s2), pole: _vec(A.left.pole, _p2), curl: reloading && this.leftOnMag > 0.5 ? CURLS.mag : CURLS[A.left.curl] },
+    };
   }
 
   attachMuzzle(parent, pos) {
@@ -86,6 +134,7 @@ export class Firearm {
       entry = buildViewGun(spec);
       entry.object.position.copy(entry.view.pos);
       entry.object.scale.setScalar(entry.view.scale);
+      this.addHands(entry);
       this.model.add(entry.object);
       this.views[spec.model] = entry;
     }
@@ -193,6 +242,14 @@ export class Firearm {
     e.mag.position.set(e.magHome.x, e.magHome.y - 0.3 * drop, e.magHome.z + 0.03 * drop);
     e.mag.rotation.x = -0.3 * drop;
     e.mag.visible = drop < 0.97;
+    // Left hand: leaves the handguard, grabs the magazine, pulls it out, brings a fresh
+    // one up from below, seats it, and goes back
+    const grab = reloading ? Math.min(ss(p, 0.03, 0.13), 1 - ss(p, 0.8, 0.94)) : 0;
+    const L = e.tL;
+    this.leftOnMag = grab;
+    _hp.copy(e.leftMag.pos).add(e.mag.position).sub(e.magHome);
+    L.position.lerpVectors(e.leftSupport.pos, _hp, grab);
+    L.quaternion.slerpQuaternions(e.leftSupport.quat, e.leftMag.quat, grab);
     // The slide/bolt kicks back on each shot; a pistol's slide locks back when empty
     const travel = g.spec.model === 'pistol' ? 0.03 : 0.012;
     const locked = g.spec.model === 'pistol' && g.ammo === 0 && !reloading ? 1 : 0;
@@ -290,6 +347,7 @@ export class Firearm {
     rot.x += this.kick.flip[0] + this.sway.pitch * 0.5 * loose;
     rot.y += this.kick.side[0] + this.sway.yaw * 0.6 * loose;
     rot.z += this.kick.roll[0] + this.sway.yaw * 0.4 * loose;
+
 
     this.flashTimer -= dt;
     this.flash.visible = this.flashTimer > 0;
