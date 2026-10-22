@@ -29,6 +29,7 @@ import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
 import { createDust } from './dust.js';
 import { DeathCam } from './deathcam.js';
+import { FPArms } from './fparms.js';
 import { mergeStatic } from './merge.js';
 
 // Low-latency canvas: `desynchronized` lets the browser present frames without
@@ -139,6 +140,7 @@ onBotsChange((n) => { if (match.state === 'warmup') bots.setCount(n); });
 
 const weapon = new Firearm(camera, scene, player);
 const knife = new Knife(camera, scene, player);
+const arms = new FPArms(camera);
 // Every spawn (including a new match) starts with a fresh handgun; box weapons are lost
 player.onRespawn = () => { weapon.equip(HANDGUN); setWeapon(weapon); };
 let active = weapon;
@@ -406,7 +408,7 @@ initProfile().catch((e) => console.warn('Profiles unavailable', e));
 const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 if (DEBUG) window.agilos = {
   player, weapon, knife, setWeapon, world, bots, match, boxes, renderer, scene, postfx, useBox, stats, account,
-  get nav() { return nav; }, get arena() { return arena; }, buildMap, useMap, colliders, pickups,
+  get nav() { return nav; }, get arena() { return arena; }, buildMap, useMap, colliders, pickups, arms,
   deathCam, startMatch, restartMatch,
   get kills() { return player.kills; },
 };
@@ -747,6 +749,11 @@ function frame(now) {
   }
   weapon.update(dt);
   knife.update(dt);
+  // Arms on whatever is in your hands (hidden behind the sniper scope and when dead)
+  const held = active === knife ? knife : weapon;
+  const armsOn = held.model.visible && (held !== weapon || weapon.current.visible);
+  if (armsOn) held.model.updateMatrixWorld(true);
+  arms.update(held.armPose(), armsOn);
   bots.update(dt);
   boxes.update(dt, t, camera.position);
   pickups.update(dt, t);
