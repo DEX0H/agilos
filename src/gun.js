@@ -12,6 +12,8 @@ export const HANDGUN = {
   // sideStart shots (a fixed, learnable pattern), jitter: random sideways; maxClimb caps the
   // climb; recover: how fast the view settles once you stop firing (per second), after
   // `delay`. roll: camera roll punch. vm*: the gun's kick in your hands (back m, muzzle flip).
+  adsFov: 62,           // field of view while aiming down sights
+  adsEye: 0.3,          // a pistol is held out at arm's length (rifles sit at the cheek)
   kick: { up: 0.042, side: 0, sideStart: 99, jitter: 0.014, maxClimb: 0.2, recover: 9, delay: 0.06, roll: 0.012, vmBack: 0.07, vmFlip: 0.26, vmRoll: 0.05 },
   range: 150,
   magSize: 12,
@@ -40,6 +42,7 @@ export const SMG = {
   rarity: 'common',
   weight: 55,
   auto: true,
+  adsFov: 60,
   kick: { up: 0.0105, side: 0.006, sideStart: 5, jitter: 0.008, maxClimb: 0.1, recover: 8, delay: 0.09, roll: 0.006, vmBack: 0.024, vmFlip: 0.05, vmRoll: 0.03 },
   range: 90,
   magSize: 30,
@@ -65,6 +68,7 @@ export const RIFLE = {
   rarity: 'rare',
   weight: 35,
   auto: true,
+  adsFov: 52,
   kick: { up: 0.016, side: 0.011, sideStart: 7, jitter: 0.005, maxClimb: 0.13, recover: 7, delay: 0.1, roll: 0.008, vmBack: 0.038, vmFlip: 0.08, vmRoll: 0.025 },
   range: 160,
   magSize: 30,
@@ -192,8 +196,10 @@ export class GunState {
     else if (!o.onGround) r = s.airSpread;
     else r = s.moveSpread * Math.min(1, hs / 10);
     if (o.state === 'crouch') r *= s.crouchMult;
+    // Aiming down sights tightens the cone (the player only; bots have their own aim)
+    if (o.aiming && !s.hipSpread) r *= 0.4;
     if (s.hipSpread && !o.ads) r += s.hipSpread; // scoped weapons need the scope to be accurate
-    return r + this.bloom;
+    return r + this.bloom * (o.aiming ? 0.7 : 1);
   }
 
   // Fire from `origin` along `aim`. Returns { fired, hit, headshot, kill, target, end }.

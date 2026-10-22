@@ -139,11 +139,11 @@ export function buildControlsPanel(container, hints) {
       hints.innerHTML = '';
       hints.append(
         chip([b('forward'), b('left'), b('back'), b('right')], 'move'),
-        chip([b('jump')], 'jump · double · wall'),
+        chip([b('jump')], 'jump · double · wall · hold at a wall: climb'),
         chip([b('sprint')], 'sprint'),
-        chip([b('crouch')], 'slide / crouch'),
+        chip([b('crouch')], 'slide / crouch · jump+crouch on a mantle: superglide'),
         chip(['Mouse'], 'shoot'),
-        chip(['RMB'], 'scope (sniper)'),
+        chip(['RMB'], 'hold: aim down sights'),
         chip([b('interact')], 'mystery box'),
         chip([b('reload')], 'reload'),
         chip([b('weapon1'), b('weapon2')], 'weapons'),

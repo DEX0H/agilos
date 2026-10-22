@@ -716,6 +716,8 @@ function frame(now) {
   // Dead or dropping in: the death / intro camera takes over from the eyes
   if (player.dead && !deathCam.active) deathCam.start(player.lastAttacker);
   deathCam.update(dt);
+  // Knife out (guns away): a little faster, like Apex's holstered speed
+  player.speedMult = active === knife ? 1.13 : 1;
   const viewmodel = !player.dead && deathCam.intro < 0.35;
   weapon.model.visible = viewmodel && active === weapon;
   knife.model.visible = viewmodel && active === knife;
@@ -756,6 +758,8 @@ function frame(now) {
   const scoped = active === weapon && weapon.scoped;
   css(scope, 'opacity', scoped ? '1' : '0');
   css(crosshair, 'visibility', scoped ? 'hidden' : 'visible');
+  // Aiming down sights: the sights are the crosshair
+  css(crosshair, 'opacity', active === weapon ? (1 - weapon.aim).toFixed(2) : '1');
 
   // Mystery box prompt
   let promptText = '';

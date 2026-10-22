@@ -21,6 +21,7 @@ export class Player extends Character {
 
     this.keys = new Set();
     this.jumpQueued = false;
+    this.crouchQueued = false;
     this.locked = false;
 
     this.camera.rotation.order = 'YXZ';
@@ -67,6 +68,7 @@ export class Player extends Character {
         e.preventDefault();
         if (!e.repeat) this.jumpQueued = true;
       }
+      if (e.code === settings.binds.crouch && !e.repeat) this.crouchQueued = true;
       if (e.code === 'Space') e.preventDefault(); // never scroll the page
       this.keys.add(e.code);
     });
@@ -116,8 +118,11 @@ export class Player extends Character {
       sprint: k.has(b.sprint),
       crouch: k.has(b.crouch),
       jump: this.jumpQueued,
+      jumpHeld: k.has(b.jump),
+      crouchPressed: this.crouchQueued,
     };
     this.jumpQueued = false;
+    this.crouchQueued = false;
     this.simulate(dt, this.frozen ? NO_INPUT : input);
     this.updateCamera(dt);
   }
