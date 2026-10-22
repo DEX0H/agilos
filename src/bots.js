@@ -542,9 +542,26 @@ export class Bot extends Character {
     return true;
   }
 
+  // Hurt: head for the nearest health pickup if one is close and inside the zone
+  pickHeal(m) {
+    if (!this.pickups || this.health > this.maxHealth * 0.6) return false;
+    let best = null;
+    let bestD = 35;
+    for (const it of this.pickups.available()) {
+      if (m && !m.insideNext(it.pos)) continue;
+      const d = it.pos.distanceTo(this.position);
+      if (d < bestD) { best = it; bestD = d; }
+    }
+    if (!best) return false;
+    this.goal = best.pos.clone();
+    this.goalTimer = 10;
+    return true;
+  }
+
   pickGoal() {
     const m = this.zoneLive() ? this.match : null;
     this.boxTarget = null;
+    if (this.pickHeal(m)) return;
     if (this.pickBox(m)) return;
     const others = this.world.combatants.filter((c) => c !== this && !c.dead && (!m || m.insideNext(c.position)));
     if (others.length && Math.random() < HUNT_CHANCE) {
@@ -889,6 +906,7 @@ export class Bots {
       const i = this.list.length;
       const b = new Bot(this.scene, this.world, this.nav, this.spawnPoints[i % this.spawnPoints.length], i, this.spawnPoints);
       b.boxes = this.boxes;
+      b.pickups = this.pickups;
       b.match = this.match;
       if (this.match) b.frozen = true;
       this.list.push(b);
@@ -899,6 +917,11 @@ export class Bots {
       this.world.remove(b);
       b.group.removeFromParent();
     }
+  }
+
+  setPickups(p) {
+    this.pickups = p;
+    for (const b of this.list) b.pickups = p;
   }
 
   // A new map: new navigation graph and spawns for everyone
