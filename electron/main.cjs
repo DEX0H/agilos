@@ -24,9 +24,9 @@ const prefsFile = () => path.join(app.getPath('userData'), 'desktop-prefs.json')
 function readPrefs() {
   try {
     const p = JSON.parse(fs.readFileSync(prefsFile(), 'utf8'));
-    return { autoUpdate: p.autoUpdate !== false };
+    return { autoUpdate: p.autoUpdate !== false, uncapped: p.uncapped !== false };
   } catch {
-    return { autoUpdate: true };
+    return { autoUpdate: true, uncapped: true };
   }
 }
 function writePrefs(prefs) {
@@ -36,6 +36,16 @@ function writePrefs(prefs) {
     // not writable: the setting lasts for this session only
   }
 }
+
+// Lowest input lag: draw frames as fast as the GPU allows instead of waiting for the
+// monitor's refresh (vsync). Can tear a little; switch it off in the menu. Set before
+// the app starts, so a change applies on the next launch.
+if (readPrefs().uncapped) {
+  app.commandLine.appendSwitch('disable-frame-rate-limit');
+  app.commandLine.appendSwitch('disable-gpu-vsync');
+}
+// Laptops with two GPUs: use the fast one
+app.commandLine.appendSwitch('force_high_performance_gpu');
 
 let win = null;
 
@@ -107,6 +117,10 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('agilos:info', () => ({ version: app.getVersion(), ...readPrefs() }));
+  ipcMain.handle('agilos:set-uncapped', (_e, on) => {
+    writePrefs({ ...readPrefs(), uncapped: !!on });
+    return readPrefs();
+  });
   ipcMain.handle('agilos:set-auto-update', (_e, on) => {
     writePrefs({ ...readPrefs(), autoUpdate: !!on });
     return readPrefs();

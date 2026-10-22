@@ -155,9 +155,6 @@ class MysteryBox {
     }
     this.group.add(this.bulbs);
 
-    this.light = new THREE.PointLight(0x7fe3ff, 1.5, 6, 1.6);
-    this.light.position.set(0, HGT + 0.6, 0.2);
-    this.group.add(this.light);
 
     // The weapons that flash past during a spin
     this.display = new THREE.Group();
@@ -291,11 +288,6 @@ class MysteryBox {
     const near = eye ? Math.hypot(eye.x - this.group.position.x, eye.z - this.group.position.z) : 99;
     const fade = 0.08 + 0.92 * THREE.MathUtils.smoothstep(near, 2.5, 12);
     this.beamMat.opacity = beamPulse * fade;
-
-    // Point light: soft, tinted by rarity while open
-    if (rarity && st !== 'ready' && st !== 'cooldown') this.light.color.copy(rarity);
-    else this.light.color.setRGB(0.5, 0.9, 1);
-    this.light.intensity = st === 'cooldown' ? 0.4 : 1.2 + this.open * 1.3;
 
     // "?" panels glow in the rarity colour during a roll
     const pe = this.panelMat.emissive;
