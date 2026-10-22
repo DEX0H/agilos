@@ -53,6 +53,7 @@ export class Character {
     this.spawn = spawn.clone();
 
     this.position = spawn.clone(); // feet
+    this.stepOffset = 0;           // eye lag after an auto step-up, eased back to 0
     this.velocity = new THREE.Vector3();
     this.yaw = 0;                  // look direction; yaw 0 faces -z
     this.pitch = 0;
@@ -143,6 +144,7 @@ export class Character {
 
   respawn() {
     this.position.copy(this.spawn);
+    this.stepOffset = 0;
     this.velocity.set(0, 0, 0);
     this.health = this.maxHealth;
     this.dead = false;
@@ -316,6 +318,8 @@ export class Character {
       const ledge = box.max.y - this.position.y;
       if (this.onGround && ledge > 0 && ledge <= STEP_HEIGHT) {
         this.position.y = box.max.y;
+        // The camera eases up the step instead of popping (see Player.updateCamera)
+        this.stepOffset = Math.max(-STEP_HEIGHT, this.stepOffset - ledge);
         continue;
       }
       if (d > 0) this.position[axis] = box.min[axis] - HALF_W;

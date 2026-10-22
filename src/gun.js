@@ -8,7 +8,11 @@ export const HANDGUN = {
   label: 'Handgun',
   model: 'pistol',
   auto: false,
-  recoil: 0.03,         // camera kick per shot, radians
+  // Recoil (radians). up: climb per shot; side: sway amplitude once a spray passes
+  // sideStart shots (a fixed, learnable pattern), jitter: random sideways; maxClimb caps the
+  // climb; recover: how fast the view settles once you stop firing (per second), after
+  // `delay`. roll: camera roll punch. vm*: the gun's kick in your hands (back m, muzzle flip).
+  kick: { up: 0.042, side: 0, sideStart: 99, jitter: 0.014, maxClimb: 0.2, recover: 9, delay: 0.06, roll: 0.012, vmBack: 0.07, vmFlip: 0.26, vmRoll: 0.05 },
   range: 150,
   magSize: 12,
   reserve: 72,
@@ -36,7 +40,7 @@ export const SMG = {
   rarity: 'common',
   weight: 55,
   auto: true,
-  recoil: 0.009,
+  kick: { up: 0.0105, side: 0.006, sideStart: 5, jitter: 0.008, maxClimb: 0.1, recover: 8, delay: 0.09, roll: 0.006, vmBack: 0.024, vmFlip: 0.05, vmRoll: 0.03 },
   range: 90,
   magSize: 30,
   reserve: 150,
@@ -61,7 +65,7 @@ export const RIFLE = {
   rarity: 'rare',
   weight: 35,
   auto: true,
-  recoil: 0.013,
+  kick: { up: 0.016, side: 0.011, sideStart: 7, jitter: 0.005, maxClimb: 0.13, recover: 7, delay: 0.1, roll: 0.008, vmBack: 0.038, vmFlip: 0.08, vmRoll: 0.025 },
   range: 160,
   magSize: 30,
   reserve: 120,
@@ -89,7 +93,7 @@ export const SNIPER = {
   auto: false,
   scope: true,
   scopeFov: 22,
-  recoil: 0.07,
+  kick: { up: 0.085, side: 0, sideStart: 99, jitter: 0.02, maxClimb: 0.2, recover: 5, delay: 0.15, roll: 0.03, vmBack: 0.13, vmFlip: 0.36, vmRoll: 0.08 },
   range: 300,
   magSize: 5,
   reserve: 15,
