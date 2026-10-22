@@ -36,7 +36,39 @@ function material(kind, color) {
 }
 const trimMat = new THREE.MeshBasicMaterial({ color: TRIM_COLOR });
 
-export function buildArena(scene) {
+// The sun and sky fill, created once (the map is rebuilt between matches, the light isn't).
+// The sun's shadow box follows the player (see main.js), so big maps keep sharp shadows.
+export function createLights(scene) {
+  const sun = new THREE.DirectionalLight(0xffe2b8, 2.2);
+  sun.position.copy(SUN_DIR).multiplyScalar(60);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.02;
+  Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, near: 1, far: 150 });
+  scene.add(sun, sun.target);
+  // Cool sky fill from above, warm bounce from the ground
+  scene.add(new THREE.HemisphereLight(0xbcd0ff, 0x3a3228, 1.0));
+  return sun;
+}
+
+// Deterministic randomness for generated maps
+function rng(seed) {
+  let x = (seed >>> 0) || 1;
+  return () => {
+    x = (x * 1664525 + 1013904223) >>> 0;
+    return x / 4294967296;
+  };
+}
+
+export const LOT = 17.5;            // building lot pitch: 12 m buildings, 5.5 m streets
+export const halfFor = (lots) => (lots * LOT + 7.5) / 2;
+
+// `lots` buildings per side: 3 is the hand-made map (60 x 60 m); 4 to 10 generate a city
+// of that many lots (up to about 190 x 190 m) from `seed`.
+export function buildArena(scene, { lots = 3, seed = 1 } = {}) {
+  const half = halfFor(lots);
+  const rand = rng(seed);
   const colliders = [];
   const group = new THREE.Group();
   scene.add(group);
@@ -48,20 +80,6 @@ export function buildArena(scene) {
   const nav = (x, y, z) => navPoints.push(new THREE.Vector3(x, y, z)) - 1;
   // Jump between two roof edges. One-way for drops down to a lower roof.
   const jump = (a, b, oneWay = false) => navJumps.push([nav(...a), nav(...b), oneWay]);
-
-  // Low golden sun from the shared direction
-  const sun = new THREE.DirectionalLight(0xffe2b8, 2.2);
-  sun.position.copy(SUN_DIR).multiplyScalar(60);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.02;
-  Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, near: 1, far: 150 });
-  scene.add(sun);
-
-  // Cool sky fill from above, warm bounce from the ground
-  const hemi = new THREE.HemisphereLight(0xbcd0ff, 0x3a3228, 1.0);
-  scene.add(hemi);
 
   // Solid box centred on (x, z), from bottomY up to top.
   // `trim` puts thin glowing strips along the top edges so ledges are easy to read.
@@ -209,25 +227,36 @@ export function buildArena(scene) {
 
     // Roof cover kept off the centre lines so bots can cross the roof
     block(cx + w * 0.25, cz - d * 0.25, 2, 1, roof + 1.0, { bottomY: roof, kind: 'wood', color: crateColor });
-    return b;
+    return Object.assign(b, { cx, cz, w, d, stories });
   }
 
   // Ground (top at y = 0)
-  block(0, 0, 60, 60, 0, { bottomY: -1, color: new THREE.Color(0x6a6258), kind: 'ground' });
+  const size = half * 2;
+  block(0, 0, size, size, 0, { bottomY: -1, color: new THREE.Color(0x6a6258), kind: 'ground' });
 
   // Perimeter walls, tall enough that the tower roof can't see over them
   const wallTop = 16;
   const perimeter = new THREE.Color(0x7d8590);
-  block(0, -30, 60, 1, wallTop, { kind: 'corrugated', color: perimeter });
-  block(0, 30, 60, 1, wallTop, { kind: 'corrugated', color: perimeter });
-  block(-30, 0, 1, 60, wallTop, { kind: 'corrugated', color: perimeter });
-  block(30, 0, 1, 60, wallTop, { kind: 'corrugated', color: perimeter });
+  block(0, -half, size, 1, wallTop, { kind: 'corrugated', color: perimeter });
+  block(0, half, size, 1, wallTop, { kind: 'corrugated', color: perimeter });
+  block(-half, 0, 1, size, wallTop, { kind: 'corrugated', color: perimeter });
+  block(half, 0, 1, size, wallTop, { kind: 'corrugated', color: perimeter });
 
-  // Wall-jump chimneys: a free wall 1.4 m from the perimeter wall in the west and east
-  // streets. Kick back and forth to climb to 9 m.
+  // Wall-jump chimneys: a free wall 1.4 m from the perimeter wall. Kick back and forth
+  // to climb to 9 m.
   const chimney = new THREE.Color(0x8a8f99);
-  block(-27.9, -7.5, 0.4, 5, 9, { kind: 'concrete_wall', color: chimney, trim: true });
-  block(27.9, 7.5, 0.4, 5, 9, { kind: 'concrete_wall', color: chimney, trim: true });
+  const chimneys = [];
+  const chimneyAt = (x, z) => {
+    const alongZ = Math.abs(x) > Math.abs(z);
+    block(x, z, alongZ ? 0.4 : 5, alongZ ? 5 : 0.4, 9, { kind: 'concrete_wall', color: chimney, trim: true });
+    chimneys.push(new THREE.Vector3(x, 0, z));
+  };
+  let playerSpawn;
+  let mobSpawns = [];
+
+  if (lots === 3) {
+  chimneyAt(-27.9, -7.5);
+  chimneyAt(27.9, 7.5);
 
   // ---- Buildings ----
   // Centre tower, 4 stories (roof 12 m). Wall sides chosen to keep bridges and stairs clear.
@@ -278,6 +307,118 @@ export function buildArena(scene) {
   jump([5.3, 12, -3], [9.7, 6, -3], true);          // tower roof drops to E roof
   jump([-5.3, 12, -3], [-9.7, 3, -3], true);        // tower roof drops to W roof
 
+  playerSpawn = new THREE.Vector3(0, 0, 26);
+  mobSpawns = [
+    // Streets
+    new THREE.Vector3(-26, 0, 0),
+    new THREE.Vector3(26, 0, 0),
+    new THREE.Vector3(0, 0, -26),
+    new THREE.Vector3(26, 0, 26),
+    new THREE.Vector3(-26, 0, -26),
+    // Upper floors
+    new THREE.Vector3(2, 3, 2),          // tower 1F
+    new THREE.Vector3(-17.5, 6, -14),    // NW 2F
+    new THREE.Vector3(17.5, 6, 17.5),    // SE 2F
+  ];
+  } else {
+    generateCity();
+  }
+
+  // ---- Generated city: a grid of lots with buildings of 1 to 4 stories, taller toward
+  // the middle, some empty plazas, bridges between neighbouring floors, street cover ----
+  function generateCity() {
+    const centre = (i) => (i - (lots - 1) / 2) * LOT;
+    const sides = ['N', 'E', 'S', 'W'];
+    const built = [];
+    for (let i = 0; i < lots; i++) {
+      built.push([]);
+      for (let k = 0; k < lots; k++) {
+        const cx = centre(i);
+        const cz = centre(k);
+        if (rand() < 0.1 && Math.hypot(cx, cz) > LOT) { built[i].push(null); continue; } // plaza
+        const w = 8 + 2 * Math.floor(rand() * 3);        // 8, 10 or 12 m: streets stay wide
+        const d = 8 + 2 * Math.floor(rand() * 3);
+        const r = Math.hypot(cx, cz) / half;
+        const stories = Math.max(1, Math.min(4, Math.round(1 + rand() * 2.6 * (1.25 - r * 0.7))));
+        const stair = [];
+        for (let s = 0; s < stories; s++) {
+          let side = sides[Math.floor(rand() * 4)];
+          if (s > 0 && side === stair[s - 1]) side = sides[(sides.indexOf(side) + 1) % 4];
+          stair.push(side);
+        }
+        built[i].push(building(cx, cz, w, d, stories, stair));
+      }
+    }
+
+    // Lookout on the tallest building nearest the middle
+    let top = null;
+    for (const row of built) for (const b of row) if (b && (!top || b.stories > top.stories || (b.stories === top.stories && Math.hypot(b.cx, b.cz) < Math.hypot(top.cx, top.cz)))) top = b;
+    if (top && top.stories >= 3) block(top.cx - top.w * 0.2, top.cz + top.d * 0.2, 3, 3, top.stories * STORY + 1.5, { bottomY: top.stories * STORY, trim: true });
+
+    // Bridges across the street between floors at the same height
+    const bridgeColor = new THREE.Color(0x7a6a55);
+    const clear = (x0, z0, x1, z1, y0, y1) => {
+      const box = new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1));
+      return !colliders.some((c) => c.intersectsBox(box));
+    };
+    const bridge = (a, b, alongX) => {
+      const level = 1 + Math.floor(rand() * Math.min(a.stories, b.stories));
+      const y = level * STORY;
+      for (const off of [0, -2.2, 2.2]) {
+        if (alongX) {
+          const z = (a.cz + b.cz) / 2 + off;
+          if (Math.abs(z - a.cz) > a.d / 2 - 1.2 || Math.abs(z - b.cz) > b.d / 2 - 1.2) continue;
+          // Gap free, and walkable 0.7 m into each building (no wall or pillar in the way)
+          if (!clear(a.x1 + 0.02, z - 1, b.x0 - 0.02, z + 1, y - SLAB, y + 2)) continue;
+          if (!clear(a.x1 - 0.8, z - 0.6, a.x1, z + 0.6, y + 0.05, y + 1.9)) continue;
+          if (!clear(b.x0, z - 0.6, b.x0 + 0.8, z + 0.6, y + 0.05, y + 1.9)) continue;
+          block((a.x1 + b.x0) / 2, z, b.x0 - a.x1 + 0.2, 2, y, { bottomY: y - SLAB, kind: 'metal', color: bridgeColor, trim: true });
+          nav(a.x1 - 0.7, y, z); nav(b.x0 + 0.7, y, z);
+        } else {
+          const x = (a.cx + b.cx) / 2 + off;
+          if (Math.abs(x - a.cx) > a.w / 2 - 1.2 || Math.abs(x - b.cx) > b.w / 2 - 1.2) continue;
+          if (!clear(x - 1, a.z1 + 0.02, x + 1, b.z0 - 0.02, y - SLAB, y + 2)) continue;
+          if (!clear(x - 0.6, a.z1 - 0.8, x + 0.6, a.z1, y + 0.05, y + 1.9)) continue;
+          if (!clear(x - 0.6, b.z0, x + 0.6, b.z0 + 0.8, y + 0.05, y + 1.9)) continue;
+          block(x, (a.z1 + b.z0) / 2, 2, b.z0 - a.z1 + 0.2, y, { bottomY: y - SLAB, kind: 'metal', color: bridgeColor, trim: true });
+          nav(x, y, a.z1 - 0.7); nav(x, y, b.z0 + 0.7);
+        }
+        return;
+      }
+    };
+    for (let i = 0; i < lots; i++) {
+      for (let k = 0; k < lots; k++) {
+        const a = built[i][k];
+        if (!a) continue;
+        if (i + 1 < lots && built[i + 1][k] && rand() < 0.45) bridge(a, built[i + 1][k], true);
+        if (k + 1 < lots && built[i][k + 1] && rand() < 0.45) bridge(a, built[i][k + 1], false);
+      }
+    }
+
+    // Street cover and hop crates at random spots that are free
+    const crates = Math.round(lots * lots * 0.9);
+    for (let n = 0, tries = 0; n < crates && tries < crates * 20; tries++) {
+      const x = (rand() * 2 - 1) * (half - 3);
+      const z = (rand() * 2 - 1) * (half - 3);
+      const h = rand() < 0.5 ? 1.0 : 1.6;
+      if (!clear(x - 2, z - 2, x + 2, z + 2, 0.05, 4)) continue;
+      block(x, z, 1.4, 1.4, h, { kind: 'wood', color: crateColor });
+      n++;
+    }
+
+    // A wall-jump chimney on each side of the map
+    for (const [sx, sz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      for (let t = 0; t < 10; t++) {
+        const along = (rand() * 2 - 1) * (half - 10);
+        const x = sx ? sx * (half - 2.1) : along;
+        const z = sz ? sz * (half - 2.1) : along;
+        if (!clear(x - 2.6, z - 2.6, x + 2.6, z + 2.6, 0.05, 9)) continue;
+        chimneyAt(x, z);
+        break;
+      }
+    }
+  }
+
   // Rooftop AC units in roof corners, clear of the crate, stairs, jumps and nav points
   const AC_W = 1.35;
   const AC_D = 0.55;
@@ -303,8 +444,9 @@ export function buildArena(scene) {
   }
 
   // Ground grid of nav points wherever a body fits
-  for (let x = -27.5; x <= 27.5; x += 5) {
-    for (let z = -27.5; z <= 27.5; z += 5) {
+  const g0 = -half + 2.5;
+  for (let x = g0; x <= -g0 + 0.01; x += 5) {
+    for (let z = g0; z <= -g0 + 0.01; z += 5) {
       let free = true;
       for (const c of colliders) {
         if (c.min.x < x + 0.45 && c.max.x > x - 0.45 && c.min.z < z + 0.45 && c.max.z > z - 0.45 &&
@@ -317,31 +459,28 @@ export function buildArena(scene) {
     }
   }
 
-  const playerSpawn = new THREE.Vector3(0, 0, 26);
-  const mobSpawns = [
-    // Streets
-    new THREE.Vector3(-26, 0, 0),
-    new THREE.Vector3(26, 0, 0),
-    new THREE.Vector3(0, 0, -26),
-    new THREE.Vector3(26, 0, 26),
-    new THREE.Vector3(-26, 0, -26),
-    // Upper floors
-    new THREE.Vector3(2, 3, 2),          // tower 1F
-    new THREE.Vector3(-17.5, 6, -14),    // NW 2F
-    new THREE.Vector3(17.5, 6, 17.5),    // SE 2F
-  ];
+  // Generated maps: spawns spread over the streets (the match adds more from nav points)
+  if (!playerSpawn) {
+    const street = navPoints.filter((p) => p.y === 0).sort(() => rand() - 0.5);
+    playerSpawn = street.find((p) => p.z > half * 0.6) || street[0];
+    playerSpawn = playerSpawn.clone();
+    for (const p of street) {
+      if (mobSpawns.length >= 15) break;
+      if ([playerSpawn, ...mobSpawns].every((q) => q.distanceTo(p) > half * 0.35)) mobSpawns.push(p.clone());
+    }
+  }
 
   // Inner faces of the perimeter walls get full city-block facades
+  const inner = half - 0.5;
   const perimeterFaces = [
-    { x: 0, z: -29.5, nx: 0, nz: 1, length: 58 },
-    { x: 0, z: 29.5, nx: 0, nz: -1, length: 58 },
-    { x: -29.5, z: 0, nx: 1, nz: 0, length: 58 },
-    { x: 29.5, z: 0, nx: -1, nz: 0, length: 58 },
+    { x: 0, z: -inner, nx: 0, nz: 1, length: size - 2 },
+    { x: 0, z: inner, nx: 0, nz: -1, length: size - 2 },
+    { x: -inner, z: 0, nx: 1, nz: 0, length: size - 2 },
+    { x: inner, z: 0, nx: -1, nz: 0, length: size - 2 },
   ];
-  const chimneys = [new THREE.Vector3(-27.9, 0, -7.5), new THREE.Vector3(27.9, 0, 7.5)];
 
   return {
     colliders, group, playerSpawn, mobSpawns, navPoints, navLinks, navJumps,
-    facades, perimeterFaces, chimneys, slabs, roofs, rooftopProps,
+    facades, perimeterFaces, chimneys, slabs, roofs, rooftopProps, half, lots,
   };
 }

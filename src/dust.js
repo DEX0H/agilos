@@ -22,9 +22,11 @@ export function createDust(scene, count = 500) {
   scene.add(points);
 
   return {
-    update(t) {
+    // The dust volume travels with the camera, so big maps have it everywhere
+    update(t, at) {
       points.rotation.y = t * 0.015;
-      points.position.y = Math.sin(t * 0.3) * 0.25;
+      if (at) points.position.set(at.x, Math.sin(t * 0.3) * 0.25, at.z);
+      else points.position.y = Math.sin(t * 0.3) * 0.25;
     },
   };
 }

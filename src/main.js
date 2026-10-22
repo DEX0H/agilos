@@ -6,7 +6,9 @@ import '@fontsource/rajdhani/latin-600.css';
 import '@fontsource/rajdhani/latin-700.css';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildArena } from './arena.js';
+import { buildArena, createLights } from './arena.js';
+import { ColliderGrid } from './grid.js';
+import { SUN_DIR } from './sky.js';
 import { dressCity } from './city.js';
 import { Player } from './player.js';
 import { Firearm } from './weapon.js';
@@ -62,22 +64,67 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 scene.add(camera); // the gun viewmodel is a child of the camera
 
 // ---- Game world ----
-const arena = buildArena(scene);
-const { colliders, playerSpawn, mobSpawns, navPoints, navLinks, navJumps } = arena;
-// City facades and details load in the background; the plain boxes show until then.
-// Then the arena's hundreds of static meshes are merged into a few draw calls.
-dressCity(scene, arena)
-  .catch((e) => console.warn('City dressing failed to load; keeping plain walls', e))
-  .finally(() => { arena.mergeInfo = mergeStatic(arena.group); });
+// Every match rolls a map size: 3 lots per side is the hand-made 60 m map, 4 to 10 lots
+// generate a city of up to about 190 x 190 m. The world is rebuilt between matches
+// behind the fade to black.
+const sun = createLights(scene);
+const colliders = [];               // shared by everything; its contents change per map
+let arena = null;
+let nav = null;
+let cityGroup = null;
+let mapToken = 0;
+const rollLots = () => 3 + Math.floor(Math.random() * 8);
+const boxCountFor = (lots) => 4 + Math.round(((lots - 3) * 8) / 7);
+
+function disposeTree(root) {
+  root.traverse((o) => {
+    if (o.isInstancedMesh) o.dispose();
+    else if (o.geometry) o.geometry.dispose();
+  });
+}
+
+function buildMap(lots) {
+  const token = ++mapToken;
+  if (arena) { arena.group.removeFromParent(); disposeTree(arena.group); }
+  if (cityGroup) { cityGroup.removeFromParent(); disposeTree(cityGroup); cityGroup = null; }
+  arena = buildArena(scene, { lots, seed: Math.floor(Math.random() * 2 ** 31) });
+  colliders.length = 0;
+  colliders.push(...arena.colliders);
+  colliders.grid = new ColliderGrid(colliders);
+  nav = new NavGraph(colliders, arena.navPoints, arena.navLinks, arena.navJumps);
+  // City facades and details load in the background; the plain boxes show until then.
+  // Then the arena's static meshes are merged into a few draw calls per map chunk.
+  const a = arena;
+  dressCity(scene, a)
+    .then(({ group }) => {
+      if (token !== mapToken) { group.removeFromParent(); disposeTree(group); return; }
+      cityGroup = group;
+    })
+    .catch((e) => console.warn('City dressing failed to load; keeping plain walls', e))
+    .finally(() => { if (token === mapToken) a.mergeInfo = mergeStatic(a.group, a.half); });
+  return arena;
+}
+
+buildMap(rollLots());
 const world = new World(scene, colliders);
-const player = new Player(camera, colliders, playerSpawn);
+const player = new Player(camera, colliders, arena.playerSpawn);
 world.add(player);
-const nav = new NavGraph(colliders, navPoints, navLinks, navJumps);
-const boxes = new MysteryBoxes(scene, world, navPoints);
-const bots = new Bots(scene, world, nav, mobSpawns, settings.bots, boxes);
-const spawnPoints = [playerSpawn, ...mobSpawns];
-const match = new Match(scene, world, player, bots, spawnPoints);
-match.extraSpawns = navPoints;
+const boxes = new MysteryBoxes(scene, world, [], 0); // placed by setMap below
+const bots = new Bots(scene, world, nav, arena.mobSpawns, settings.bots, boxes);
+const match = new Match(scene, world, player, bots, [arena.playerSpawn, ...arena.mobSpawns]);
+
+// Point everything at the current map
+function useMap() {
+  boxes.half = arena.half;
+  bots.setMap(nav, arena.mobSpawns);
+  match.spawnPoints = [arena.playerSpawn, ...arena.mobSpawns];
+  match.extraSpawns = arena.navPoints;
+  match.setMapSize(arena.half);
+  player.spawn.copy(arena.playerSpawn);
+}
+useMap();
+boxes.setMap(arena.navPoints, boxCountFor(arena.lots), arena.half);
+let mapPlayed = false;
 // The bot count from settings applies right away before the first match, otherwise at the next one
 onBotsChange((n) => { if (match.state === 'warmup') bots.setCount(n); });
 
@@ -91,9 +138,19 @@ let active = weapon;
 // from above the spawn into first person during the countdown.
 let boxHintShown = false;
 function startMatch() {
+  // A fresh random map for every match after the first (the first uses the one already
+  // loaded, so clicking in doesn't stall)
+  if (mapPlayed) {
+    buildMap(rollLots());
+    useMap();
+    boxes.setMap(arena.navPoints, boxCountFor(arena.lots), arena.half);
+  } else {
+    boxes.place();
+  }
+  mapPlayed = true;
   bots.setCount(settings.bots);
-  boxes.place();
   match.start();
+  showToast(`${arena.half * 2 <= 61 ? 'DOWNTOWN' : 'CITY'}  ·  ${Math.round(arena.half * 2)} × ${Math.round(arena.half * 2)} m`, '#dfe9ff', 3);
   stats.start();
   deathCam.reset();
   deathCam.startIntro();
@@ -338,7 +395,8 @@ initProfile().catch((e) => console.warn('Profiles unavailable', e));
 
 const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 if (DEBUG) window.agilos = {
-  player, weapon, knife, setWeapon, world, nav, bots, match, boxes, renderer, scene, postfx, useBox, stats, account,
+  player, weapon, knife, setWeapon, world, bots, match, boxes, renderer, scene, postfx, useBox, stats, account,
+  get nav() { return nav; }, get arena() { return arena; }, buildMap, useMap, colliders,
   deathCam, startMatch, restartMatch,
   get kills() { return player.kills; },
 };
@@ -434,8 +492,8 @@ if (window.agilosDesktop) {
 match.onRing = (text) => showToast(text, text.includes('CLOSING') ? '#ff8a5c' : '#dfe9ff', 2.5);
 
 // Minimap, north (-z) up. Redrawn every few frames; it is cheap.
-const MAP_SPAN = 62;
 function drawMinimap() {
+  const MAP_SPAN = arena.half * 2 + 2;
   const S = minimap.width;
   const k = S / MAP_SPAN;
   const mx = (x) => (x + MAP_SPAN / 2) * k;
@@ -613,19 +671,24 @@ function updateMarkers() {
   const on = player.locked && !player.dead && match.state !== 'over';
   const W = window.innerWidth;
   const H = window.innerHeight;
+  // On big maps only nearby boxes get a marker, and only the two nearest ready ones get
+  // an arrow on the screen edge
+  const ready = boxes.boxes.filter((b) => b.group.visible && b.ready)
+    .map((b) => [b, b.position.distanceTo(camera.position)]).sort((x, y) => x[1] - y[1]);
+  const edgeOk = new Set(ready.slice(0, 2).map(([b]) => b));
   boxes.boxes.forEach((b, i) => {
     const el = markerEls[i];
     _mp.set(b.position.x, b.position.y + 1.15, b.position.z);
     const dist = _mp.distanceTo(camera.position);
-    if (!on || !b.group.visible || dist < 3.2) { el.style.display = 'none'; return; }
+    if (!on || !b.group.visible || dist < 3.2 || (dist > 90 && !edgeOk.has(b))) { el.style.display = 'none'; return; }
     _mp.project(camera);
     let x = _mp.x;
     let y = _mp.y;
     const behind = _mp.z > 1;
     if (behind) { x = -x; y = -y; }
     const edge = behind || Math.abs(x) > 0.93 || Math.abs(y) > 0.86;
-    // Recharging boxes only show when they're in view
-    if (edge && !b.ready) { el.style.display = 'none'; return; }
+    // Off-screen arrows only for the nearest ready boxes
+    if (edge && !edgeOk.has(b)) { el.style.display = 'none'; return; }
     if (edge) {
       const s = Math.max(Math.abs(x) / 0.93, Math.abs(y) / 0.86) || 1;
       x /= s;
@@ -671,7 +734,13 @@ function frame(now) {
   world.update(dt);
 
   sky.position.copy(camera.position);
-  dust.update(t);
+  dust.update(t, camera.position);
+  // The sun's shadow box follows the camera (snapped to whole shadow texels, so edges
+  // don't shimmer as you move); a 190 m map keeps the same shadow sharpness as a 60 m one
+  const texel = 80 / 2048;
+  sun.target.position.set(Math.round(camera.position.x / texel) * texel, 0, Math.round(camera.position.z / texel) * texel);
+  sun.position.copy(SUN_DIR).multiplyScalar(60).add(sun.target.position);
+  sun.target.updateMatrixWorld();
   postfx.grade.uniforms.uTime.value = t;
 
   // Crosshair gap shows the real cone: pixels = tan(spread) / tan(fov/2) * half screen height

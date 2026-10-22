@@ -25,9 +25,15 @@ function rng(seed) {
   };
 }
 
+// The kit is downloaded once; each map rebuild reuses it
+let kit = null;
+const loadKit = () => (kit ||= new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
+  .loadAsync(`${import.meta.env.BASE_URL}models/city.glb`));
+
+export const CHUNK = 64; // instanced pieces are split into map chunks so off-screen ones are skipped
+
 export async function dressCity(scene, arena) {
-  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-  const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}models/city.glb`);
+  const gltf = await loadKit();
 
   // Each scene in the file is one piece; collect its meshes with their local transforms
   const pieces = {};
@@ -159,21 +165,29 @@ export async function dressCity(scene, arena) {
     place('Prop_ManholeCover', _m.makeRotationY(r2() * Math.PI).setPosition(p.x + 1.2, 0.005, p.z + 0.8));
   }
 
-  // ---- Build one InstancedMesh per piece part ----
+  // ---- One InstancedMesh per piece part and map chunk ----
   const group = new THREE.Group();
   group.name = 'city';
   let drawCalls = 0;
+  const half = arena.half || 30;
+  const chunkOf = (m) => `${Math.floor((m.elements[12] + half) / CHUNK)},${Math.floor((m.elements[14] + half) / CHUNK)}`;
   for (const piece of Object.values(pieces)) {
-    const n = piece.placements.length;
-    if (!n) continue;
-    for (const part of piece.parts) {
-      const im = new THREE.InstancedMesh(part.geometry, part.material, n);
-      piece.placements.forEach((pm, i) => im.setMatrixAt(i, _m.multiplyMatrices(pm, part.matrix)));
-      im.castShadow = true;
-      im.receiveShadow = true;
-      im.computeBoundingSphere();
-      group.add(im);
-      drawCalls++;
+    const byChunk = new Map();
+    for (const pm of piece.placements) {
+      const k = chunkOf(pm);
+      if (!byChunk.has(k)) byChunk.set(k, []);
+      byChunk.get(k).push(pm);
+    }
+    for (const list of byChunk.values()) {
+      for (const part of piece.parts) {
+        const im = new THREE.InstancedMesh(part.geometry, part.material, list.length);
+        list.forEach((pm, i) => im.setMatrixAt(i, _m.multiplyMatrices(pm, part.matrix)));
+        im.castShadow = true;
+        im.receiveShadow = true;
+        im.computeBoundingSphere();
+        group.add(im);
+        drawCalls++;
+      }
     }
   }
   // Fluorescent tubes: a dark housing with a glowing (HDR, so it blooms) strip
