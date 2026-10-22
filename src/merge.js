@@ -7,8 +7,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // it uses the Box3 colliders, not these meshes.
 
 const _c = new THREE.Color();
+const merged = new Map(); // vertex-coloured copies of the arena materials, made once
 
-export function mergeStatic(group) {
+export function mergeStatic(group, half = 30, chunk = 64) {
   group.updateMatrixWorld(true);
   const buckets = new Map();
   const old = [];
@@ -17,13 +18,21 @@ export function mergeStatic(group) {
     old.push(o);
     for (let p = o; p && p !== group.parent; p = p.parent) if (!p.visible) return; // hidden: just dropped
     const m = o.material;
-    // Same textures and settings share one material; only the tint differs
-    const key = `${m.type}|${m.map ? m.map.uuid : m.uuid}|${m.transparent}|${o.castShadow}|${o.receiveShadow}`;
+    // Same textures and settings share one material; only the tint differs. Big maps are
+    // split into chunks so the parts behind you are skipped.
+    const cell = `${Math.floor((o.matrixWorld.elements[12] + half) / chunk)},${Math.floor((o.matrixWorld.elements[14] + half) / chunk)}`;
+    const key = `${m.type}|${m.map ? m.map.uuid : m.uuid}|${m.transparent}|${o.castShadow}|${o.receiveShadow}|${cell}`;
     let b = buckets.get(key);
     if (!b) {
-      const mat = m.clone();
-      mat.color.set(0xffffff);
-      mat.vertexColors = true;
+      // One vertex-coloured material per texture set, shared by all chunks
+      const mkey = `${m.type}|${m.map ? m.map.uuid : m.uuid}|${m.transparent}`;
+      let mat = merged.get(mkey);
+      if (!mat) {
+        mat = m.clone();
+        mat.color.set(0xffffff);
+        mat.vertexColors = true;
+        merged.set(mkey, mat);
+      }
       b = { mat, geoms: [], cast: o.castShadow, receive: o.receiveShadow };
       buckets.set(key, b);
     }

@@ -8,6 +8,7 @@ import { buildGunModel } from './gunmodels.js';
 // into your hands. Afterwards the box recharges before it can be used again.
 
 export const BOX_COUNT = 4;
+export const MAX_BOXES = 12;        // bigger maps get more boxes (see setMap)
 export const USE_RANGE = 2.3;       // metres from the box centre
 const SPIN_TIME = 1.1;              // short spin, then the weapon is equipped
 const SHOW_TIME = 0.9;              // the result hovers a moment after it is handed over
@@ -329,7 +330,14 @@ export class MysteryBoxes {
   constructor(scene, world, navPoints, count = BOX_COUNT) {
     this.world = world;
     this.boxes = [];
-    for (let i = 0; i < count; i++) this.boxes.push(new MysteryBox(scene));
+    for (let i = 0; i < MAX_BOXES; i++) this.boxes.push(new MysteryBox(scene));
+    this.setMap(navPoints, count, 30);
+  }
+
+  // A new map: find its box spots, then place `count` boxes. `half` is half the map width.
+  setMap(navPoints, count, half) {
+    this.count = Math.min(MAX_BOXES, count);
+    this.half = half;
     this.spots = this.findSpots(navPoints);
     this.place();
   }
@@ -339,7 +347,7 @@ export class MysteryBoxes {
   findSpots(navPoints) {
     const spots = [];
     const colliders = this.world.colliders;
-    const hits = (b) => colliders.some((c) => c.intersectsBox(b));
+    const hits = (b) => (colliders.grid ? colliders.grid.hitsBox(b) : colliders.some((c) => c.intersectsBox(b)));
     const floorAt = (x, y, z) => {
       _v.set(x, y + 0.4, z);
       const d = this.world.raycastWorld(_v, DOWN, 1.2);
@@ -392,13 +400,13 @@ export class MysteryBoxes {
     }
     // Spots under open sky first (their beam can be seen from across the map), and
     // away from the outer walls where nobody goes; covered spots only fill the gaps
-    const open = (s) => s.sky >= 10 && Math.max(Math.abs(s.pos.x), Math.abs(s.pos.z)) < 27;
+    const open = (s) => s.sky >= 10 && Math.max(Math.abs(s.pos.x), Math.abs(s.pos.z)) < this.half - 3;
     const shuffled = [...this.spots].sort(() => Math.random() - 0.5);
     const pool = [...shuffled.filter(open), ...shuffled.filter((s) => !open(s))];
     const chosen = [];
     for (const gap of [MIN_SPACING, MIN_SPACING * 0.6]) {
       for (const s of pool) {
-        if (chosen.length >= this.boxes.length) break;
+        if (chosen.length >= this.count) break;
         if (!chosen.includes(s) && chosen.every((c) => c.pos.distanceTo(s.pos) >= gap)) chosen.push(s);
       }
     }
@@ -411,6 +419,7 @@ export class MysteryBoxes {
       b.place(s.pos, s.wall, s.sky);
       colliders.push(b.collider);
     });
+    if (colliders.grid) colliders.grid.rebuild();
   }
 
   active() {

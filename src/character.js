@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { nearbyBoxes } from './physics.js';
 
 // Shared movement and health for anything that plays: the local player, bots,
 // and later network players. Input comes in as a plain object each frame, so the
@@ -199,7 +200,16 @@ export class Character {
   }
 
   // input: { forward -1..1, strafe -1..1, sprint, crouch, jump (true on the frame it is pressed) }
+  // The boxes this character could touch this frame (from the colliders' grid), so
+  // collision doesn't test every box on a big map
+  gatherNear(dt) {
+    const p = this.position;
+    const r = HALF_W + WALL_PROBE + 1.5 + Math.hypot(this.velocity.x, this.velocity.z) * dt;
+    this.near = nearbyBoxes(this.colliders, p.x - r, p.z - r, p.x + r, p.z + r, this.nearBuf || (this.nearBuf = []));
+  }
+
   simulate(dt, input) {
+    this.gatherNear(dt);
     this.slideCooldown = Math.max(0, this.slideCooldown - dt);
     this.wallCooldown = Math.max(0, this.wallCooldown - dt);
     this.wallTimer = Math.max(0, this.wallTimer - dt);
@@ -304,7 +314,7 @@ export class Character {
   }
 
   canStand() {
-    for (const box of this.colliders) {
+    for (const box of this.near || this.colliders) {
       if (this.overlapsWith(box, STAND_H)) return false;
     }
     return true;
@@ -313,7 +323,7 @@ export class Character {
   moveAxis(axis, d) {
     if (d === 0) return;
     this.position[axis] += d;
-    for (const box of this.colliders) {
+    for (const box of this.near || this.colliders) {
       if (!this.overlaps(box)) continue;
       const ledge = box.max.y - this.position.y;
       if (this.onGround && ledge > 0 && ledge <= STEP_HEIGHT) {
@@ -330,7 +340,7 @@ export class Character {
 
   moveVertical(d) {
     this.position.y += d;
-    for (const box of this.colliders) {
+    for (const box of this.near || this.colliders) {
       if (!this.overlaps(box)) continue;
       if (d < 0) this.position.y = box.max.y;
       else this.position.y = box.min.y - this.height;
@@ -342,7 +352,7 @@ export class Character {
     this.onGround = false;
     if (this.velocity.y > 0) return;
     const p = this.position;
-    for (const box of this.colliders) {
+    for (const box of this.near || this.colliders) {
       if (Math.abs(box.max.y - p.y) > 0.05) continue;
       const overlapsXZ = p.x + HALF_W > box.min.x && p.x - HALF_W < box.max.x &&
                          p.z + HALF_W > box.min.z && p.z - HALF_W < box.max.z;
@@ -376,7 +386,7 @@ export class Character {
         x0 = p.x - inner;
         x1 = p.x + inner;
       }
-      for (const b of this.colliders) {
+      for (const b of this.near || this.colliders) {
         if (b.min.x < x1 && b.max.x > x0 && b.min.y < y1 && b.max.y > y0 &&
             b.min.z < z1 && b.max.z > z0) {
           this.wallNormal.set(-dx, 0, -dz);

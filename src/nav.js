@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { raycastWorld } from './physics.js';
+import { raycastWorld, nearbyBoxes } from './physics.js';
 
 // Navigation graph for bots. Nodes come from the map (floor centres, stair ends,
 // a ground grid). Stairs are linked explicitly; nodes on the same level are linked
@@ -38,7 +38,7 @@ export class NavGraph {
 
   // Solid floor at height y under (x, z)?
   supported(x, z, y) {
-    for (const c of this.colliders) {
+    for (const c of nearbyBoxes(this.colliders, x - 0.1, z - 0.1, x + 0.1, z + 0.1, this.buf || (this.buf = []))) {
       if (Math.abs(c.max.y - y) < SAME_LEVEL &&
           x > c.min.x - 0.05 && x < c.max.x + 0.05 &&
           z > c.min.z - 0.05 && z < c.max.z + 0.05) {
@@ -79,17 +79,32 @@ export class NavGraph {
   }
 
   autoLink() {
-    const n = this.nodes.length;
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const a = this.nodes[i].p;
-        const b = this.nodes[j].p;
-        if (Math.abs(a.y - b.y) > SAME_LEVEL) continue;
-        const d = Math.hypot(a.x - b.x, a.z - b.z);
-        if (d > (a.y < 0.1 ? GROUND_LINK : UPPER_LINK)) continue;
-        if (this.walkable(a, b)) this.link(i, j);
+    // Bucket nodes by position so each one is only compared with its neighbours
+    const B = UPPER_LINK;
+    const buckets = new Map();
+    const key = (x, z) => `${Math.floor(x / B)},${Math.floor(z / B)}`;
+    this.nodes.forEach((nd, i) => {
+      const k = key(nd.p.x, nd.p.z);
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(i);
+    });
+    this.nodes.forEach((nd, i) => {
+      const a = nd.p;
+      const bx = Math.floor(a.x / B);
+      const bz = Math.floor(a.z / B);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          for (const j of buckets.get(`${bx + dx},${bz + dz}`) || []) {
+            if (j <= i) continue;
+            const b = this.nodes[j].p;
+            if (Math.abs(a.y - b.y) > SAME_LEVEL) continue;
+            const d = Math.hypot(a.x - b.x, a.z - b.z);
+            if (d > (a.y < 0.1 ? GROUND_LINK : UPPER_LINK)) continue;
+            if (this.walkable(a, b)) this.link(i, j);
+          }
+        }
       }
-    }
+    });
   }
 
   // Closest node on roughly the same level that can be walked to directly

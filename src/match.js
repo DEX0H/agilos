@@ -35,14 +35,16 @@ export class Match {
     this.winner = null;
     this.playerPlace = 0;
     this.total = 1 + bots.list.length;
+    this.startRadius = 44;
 
     this.zone = {
-      cx: 0, cz: 0, r: START_RADIUS,
-      fromX: 0, fromZ: 0, fromR: START_RADIUS,
-      toX: 0, toZ: 0, toR: START_RADIUS,
+      cx: 0, cz: 0, r: this.startRadius,
+      fromX: 0, fromZ: 0, fromR: this.startRadius,
+      toX: 0, toZ: 0, toR: this.startRadius,
       phase: 0, phaseTime: 0, shrinking: false, tick: START_TICK, tickTimer: TICK,
     };
     this.onRing = null; // (text) => void, for announcements
+    this.setMapSize(30);
 
     // Zone wall: a tall translucent cylinder that glows a little
     this.wall = new THREE.Mesh(
@@ -115,8 +117,8 @@ export class Match {
 
     const z = this.zone;
     Object.assign(z, {
-      cx: 0, cz: 0, r: START_RADIUS, phase: 0, shrinking: false, tick: START_TICK, tickTimer: TICK,
-      phaseTime: PHASES[0].wait,
+      cx: 0, cz: 0, r: this.startRadius, phase: 0, shrinking: false, tick: START_TICK, tickTimer: TICK,
+      phaseTime: this.phases[0].wait,
     });
     this.planNext();
 
@@ -127,17 +129,28 @@ export class Match {
     this.wall.visible = true;
   }
 
+  // Ring sizes follow the map (the numbers above are for the 60 x 60 m map); bigger maps
+  // also get longer rounds so there is time to cross them
+  setMapSize(half) {
+    const f = half / 30;
+    const slow = 1 + (f - 1) * 0.5;
+    this.startRadius = 44 * f;
+    this.mapHalf = 26 * f;
+    this.phases = PHASES.map((p) => ({ ...p, wait: p.wait * slow, shrink: p.shrink * slow, radius: p.radius * f }));
+    this.zone.r = this.zone.fromR = this.zone.toR = this.startRadius;
+  }
+
   // Next circle sits inside the current one
   planNext() {
     const z = this.zone;
-    const ph = PHASES[z.phase];
+    const ph = this.phases[z.phase];
     z.fromX = z.cx;
     z.fromZ = z.cz;
     z.fromR = z.r;
     const room = Math.max(0, z.r - ph.radius);
     const a = Math.random() * Math.PI * 2;
     const d = room * Math.sqrt(Math.random()) * 0.8;
-    const lim = Math.max(0, MAP_HALF - ph.radius * 0.5);
+    const lim = Math.max(0, this.mapHalf - ph.radius * 0.5);
     z.toX = THREE.MathUtils.clamp(z.cx + Math.cos(a) * d, -lim, lim);
     z.toZ = THREE.MathUtils.clamp(z.cz + Math.sin(a) * d, -lim, lim);
     z.toR = ph.radius;
@@ -145,15 +158,15 @@ export class Match {
 
   updateZone(dt) {
     const z = this.zone;
-    if (z.phase >= PHASES.length) return;
-    const ph = PHASES[z.phase];
+    if (z.phase >= this.phases.length) return;
+    const ph = this.phases[z.phase];
     z.phaseTime -= dt;
     if (!z.shrinking) {
       if (z.phaseTime <= 0) {
         z.shrinking = true;
         z.phaseTime = ph.shrink;
         z.tick = ph.tick;
-        this.announce(z.phase === PHASES.length - 1 ? 'FINAL RING CLOSING' : `RING ${z.phase + 1} CLOSING`);
+        this.announce(z.phase === this.phases.length - 1 ? 'FINAL RING CLOSING' : `RING ${z.phase + 1} CLOSING`);
       }
       return;
     }
@@ -164,8 +177,8 @@ export class Match {
     if (z.phaseTime <= 0) {
       z.phase++;
       z.shrinking = false;
-      if (z.phase < PHASES.length) {
-        z.phaseTime = PHASES[z.phase].wait;
+      if (z.phase < this.phases.length) {
+        z.phaseTime = this.phases[z.phase].wait;
         this.planNext();
         this.announce('NEXT RING MARKED');
       }
@@ -176,7 +189,7 @@ export class Match {
     if (this.onRing) this.onRing(text);
   }
 
-  get rounds() { return PHASES.length; }
+  get rounds() { return this.phases.length; }
 
   // Inside the current safe circle, with an optional safety margin
   inside(pos, margin = 0) {
@@ -229,7 +242,7 @@ export class Match {
     this.wall.position.x = z.cx;
     this.wall.position.z = z.cz;
     this.wall.scale.set(Math.max(0.01, z.r), 1, Math.max(0.01, z.r));
-    const showNext = z.phase < PHASES.length && (this.state === 'live' || this.state === 'countdown') && z.toR < z.r - 0.5;
+    const showNext = z.phase < this.phases.length && (this.state === 'live' || this.state === 'countdown') && z.toR < z.r - 0.5;
     this.nextWall.visible = showNext && z.toR > 0.3;
     this.nextWall.position.x = z.toX;
     this.nextWall.position.z = z.toZ;
@@ -241,8 +254,8 @@ export class Match {
     if (this.state !== 'live' && this.state !== 'over') return '';
     const z = this.zone;
     let line;
-    const round = `RING ${Math.min(z.phase + 1, PHASES.length)}/${PHASES.length}`;
-    if (z.phase >= PHASES.length) line = 'RING    closed';
+    const round = `RING ${Math.min(z.phase + 1, this.phases.length)}/${this.phases.length}`;
+    if (z.phase >= this.phases.length) line = 'RING    closed';
     else if (z.shrinking) line = `${round}  closing ${Math.ceil(z.phaseTime)}s`;
     else line = `${round}  closes in ${Math.ceil(z.phaseTime)}s`;
     const p = this.player;

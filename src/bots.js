@@ -901,6 +901,20 @@ export class Bots {
     }
   }
 
+  // A new map: new navigation graph and spawns for everyone
+  setMap(nav, spawnPoints) {
+    this.nav = nav;
+    this.spawnPoints = spawnPoints;
+    for (const b of this.list) {
+      b.nav = nav;
+      b.spawnPoints = spawnPoints;
+      b.path = [];
+      b.pathIndex = 0;
+      b.goal = null;
+      b.repathTimer = 0;
+    }
+  }
+
   update(dt) {
     for (const b of this.list) b.update(dt);
   }
