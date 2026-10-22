@@ -14,6 +14,7 @@ import { Player } from './player.js';
 import { Firearm } from './weapon.js';
 import { HANDGUN, RARITY_COLORS } from './gun.js';
 import { MysteryBoxes } from './mysterybox.js';
+import { HealthPickups, KINDS } from './pickups.js';
 import { MatchStats } from './stats.js';
 import { initProfile } from './profile.js';
 import { buildAccountUI } from './account-ui.js';
@@ -113,8 +114,16 @@ const boxes = new MysteryBoxes(scene, world, [], 0); // placed by setMap below
 const bots = new Bots(scene, world, nav, arena.mobSpawns, settings.bots, boxes);
 const match = new Match(scene, world, player, bots, [arena.playerSpawn, ...arena.mobSpawns]);
 
+// Health pickups: walk over one while hurt
+const pickups = new HealthPickups(scene, world);
+bots.setPickups(pickups);
+pickups.onPickup = (c, it) => {
+  if (c === player) showToast(`+${KINDS[it.kind].heal} HP  ·  ${KINDS[it.kind].label}`, '#7dff9a', 1.6);
+};
+
 // Point everything at the current map
 function useMap() {
+  pickups.setMap(arena.navPoints, arena.half);
   boxes.half = arena.half;
   bots.setMap(nav, arena.mobSpawns);
   match.spawnPoints = [arena.playerSpawn, ...arena.mobSpawns];
@@ -397,7 +406,7 @@ initProfile().catch((e) => console.warn('Profiles unavailable', e));
 const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 if (DEBUG) window.agilos = {
   player, weapon, knife, setWeapon, world, bots, match, boxes, renderer, scene, postfx, useBox, stats, account,
-  get nav() { return nav; }, get arena() { return arena; }, buildMap, useMap, colliders,
+  get nav() { return nav; }, get arena() { return arena; }, buildMap, useMap, colliders, pickups,
   deathCam, startMatch, restartMatch,
   get kills() { return player.kills; },
 };
@@ -536,6 +545,14 @@ function drawMinimap() {
   for (const b of boxes.active()) {
     ctx.fillStyle = b.ready ? '#ffb02e' : 'rgba(255,176,46,0.35)';
     ctx.fillRect(mx(b.position.x) - 5, mx(b.position.z) - 5, 10, 10);
+  }
+  // Health pickups: small green crosses
+  ctx.fillStyle = '#5fd35a';
+  for (const it of pickups.available()) {
+    const x = mx(it.pos.x);
+    const y = mx(it.pos.z);
+    ctx.fillRect(x - 4, y - 1.5, 8, 3);
+    ctx.fillRect(x - 1.5, y - 4, 3, 8);
   }
   // You: an arrow pointing where you look
   if (!player.dead) {
@@ -732,6 +749,7 @@ function frame(now) {
   knife.update(dt);
   bots.update(dt);
   boxes.update(dt, t, camera.position);
+  pickups.update(dt, t);
   match.update(dt);
   stats.update();
   world.update(dt);

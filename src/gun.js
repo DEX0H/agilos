@@ -13,7 +13,6 @@ export const HANDGUN = {
   // climb; recover: how fast the view settles once you stop firing (per second), after
   // `delay`. roll: camera roll punch. vm*: the gun's kick in your hands (back m, muzzle flip).
   adsFov: 62,           // field of view while aiming down sights
-  adsEye: 0.3,          // a pistol is held out at arm's length (rifles sit at the cheek)
   kick: { up: 0.042, side: 0, sideStart: 99, jitter: 0.014, maxClimb: 0.2, recover: 9, delay: 0.06, roll: 0.012, vmBack: 0.07, vmFlip: 0.26, vmRoll: 0.05 },
   range: 150,
   magSize: 12,

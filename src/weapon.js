@@ -1,9 +1,7 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GunState, HANDGUN } from './gun.js';
 import { settings, capture } from './settings.js';
-import { loadPistol, normalizeGun } from './models.js';
-import { buildGunModel } from './gunmodels.js';
+import { buildViewGun } from './viewguns.js';
 
 // The player's gun slot: first-person viewmodel and effects on top of the shared GunState.
 // It starts with the handgun; a mystery box swaps in an SMG, assault rifle or sniper.
@@ -17,18 +15,9 @@ const DRAW_TIME = 0.22;         // the new gun swings up; it can fire straight a
 const BASE_FOV = 75;
 const SCOPE_SPEED = 12;         // how fast the scope zooms in and out
 const ADS_SPEED = 16;           // how fast the gun comes up to your eye (about 0.15 s)
-const ADS_EYE = 0.1;            // the back of the gun sits this far in front of your eye
-const _inv = new THREE.Matrix4();
-const _rel = new THREE.Matrix4();
-const _bb = new THREE.Box3();
 const ease = (t) => t * t * (3 - 2 * t);
-
-// Where each model sits inside the viewmodel group (longer guns sit farther back)
-const VIEW_OFFSETS = {
-  smg: { pos: new THREE.Vector3(-0.02, 0, -0.02), scale: 0.72 },
-  rifle: { pos: new THREE.Vector3(-0.02, 0, -0.02), scale: 0.62 },
-  sniper: { pos: new THREE.Vector3(-0.02, -0.01, 0), scale: 0.56 },
-};
+const _sp = new THREE.Vector3();
+const _X = new THREE.Vector3(1, 0, 0);
 
 const _origin = new THREE.Vector3();
 const _dir = new THREE.Vector3();
@@ -54,71 +43,23 @@ export class Firearm {
     this.scopeHeld = false;    // right mouse held: aim down sights (the sniper scopes in)
     this.aim = 0;              // 0 = hip, 1 = aiming down sights
     this.zoom = 0;             // 0 = hip, 1 = fully scoped (scoped weapons only)
-    this.sightCache = null;
-    this.boxModels = {};       // built on first use
 
-    // First-person viewmodel, parented to the camera
+    // First-person viewmodel, parented to the camera. The detailed guns (viewguns.js)
+    // are built on first use and kept.
     this.model = new THREE.Group();
-    const metal = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.35, metalness: 0.7 });
-    const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1a1c20, roughness: 0.5, metalness: 0.6 });
-    const grip = new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 0.75, metalness: 0 });
-
-    const slide = new THREE.Mesh(new RoundedBoxGeometry(0.052, 0.07, 0.23, 3, 0.018), metal);
-    slide.castShadow = true;
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.06, 14), darkMetal);
-    barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.005, -0.135);
-    const frame = new THREE.Mesh(new RoundedBoxGeometry(0.046, 0.05, 0.17, 3, 0.012), darkMetal);
-    frame.position.set(0, -0.045, 0.02);
-    const frontSight = new THREE.Mesh(new RoundedBoxGeometry(0.012, 0.018, 0.012, 1, 0.003), darkMetal);
-    frontSight.position.set(0, 0.044, -0.1);
-    const handle = new THREE.Mesh(new RoundedBoxGeometry(0.047, 0.14, 0.058, 3, 0.02), grip);
-    handle.position.set(0, -0.125, 0.075);
-    handle.rotation.x = 0.25;
-    const guard = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.007, 8, 18, Math.PI), darkMetal);
-    guard.rotation.set(0, Math.PI / 2, Math.PI);
-    guard.position.set(0, -0.06, 0.02);
-
     this.muzzle = new THREE.Object3D();
-    this.muzzle.position.set(0, 0.005, -0.15);
-    slide.add(this.muzzle);
-
     this.flash = new THREE.Mesh(
       new THREE.SphereGeometry(0.05, 10, 8),
       new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 4, 1.5) }), // HDR, blooms
     );
     this.flash.visible = false;
     this.muzzle.add(this.flash);
-
     this.model.position.set(0.24, VIEW_BASE_Y, VIEW_BASE_Z);
     this.model.rotation.y = -0.05;
     camera.add(this.model);
-
-    // The handgun's own group: the simple pistol, replaced by the real model once it has loaded
-    this.pistol = new THREE.Group();
-    this.pistol.add(slide, barrel, frame, frontSight, handle, guard);
-    this.model.add(this.pistol);
-    this.current = this.pistol;
-    // Pistol magazine, only shown during a reload (dropping out, then the new one going in)
-    this.pistolMag = new THREE.Mesh(new RoundedBoxGeometry(0.032, 0.09, 0.042, 2, 0.006), darkMetal);
-    this.pistolMag.position.set(0, -0.13, 0.065);
-    this.pistolMag.rotation.x = 0.25;
-    this.pistolMag.visible = false;
-    this.pistol.add(this.pistolMag);
-    this.pistolMagHome = this.pistolMag.position.clone();
-    this.pistolMuzzle = this.muzzle.position.clone();
-    this.pistolMuzzleParent = slide;
-    const simple = [slide, barrel, frame, frontSight, handle, guard];
-    loadPistol().then((src) => {
-      const { object, muzzle } = normalizeGun(src, 0.24);
-      object.position.set(0, -0.07, 0.05); // hand point a little low and back, like a held grip
-      object.traverse((o) => { if (o.isMesh) o.castShadow = false; });
-      this.pistol.add(object);
-      for (const p of simple) p.visible = false;
-      this.pistolMuzzle = muzzle.clone();
-      this.pistolMuzzleParent = object;
-      if (this.gun.spec.model === 'pistol') this.attachMuzzle(object, muzzle);
-    }).catch((e) => console.warn('Pistol model failed to load; keeping the simple one', e));
+    this.views = {};
+    this.slideKick = 0;
+    this.equip(HANDGUN);
 
     document.addEventListener('keydown', (e) => {
       if (!capture.action && e.code === settings.binds.reload && !e.repeat) this.gun.reload();
@@ -138,65 +79,37 @@ export class Firearm {
     this.zoom = 0;
     this.aim = 0;
     this.spray = 0;
-    for (const k of Object.values(this.kick)) { k[0] = 0; k[1] = 0; }
-    this.pistol.visible = spec.model === 'pistol';
-    this.entry = null;
-    for (const m of Object.values(this.boxModels)) m.object.visible = false;
-    if (spec.model === 'pistol') {
-      this.current = this.pistol;
-      this.attachMuzzle(this.pistolMuzzleParent, this.pistolMuzzle);
-      return;
-    }
-    let entry = this.boxModels[spec.model];
+    this.slideKick = 0;
+    if (this.kick) for (const k of Object.values(this.kick)) { k[0] = 0; k[1] = 0; }
+    let entry = this.views[spec.model];
     if (!entry) {
-      entry = buildGunModel(spec);
-      const view = VIEW_OFFSETS[spec.model];
-      entry.object.position.copy(view.pos);
-      entry.object.scale.setScalar(view.scale);
-      entry.object.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+      entry = buildViewGun(spec);
+      entry.object.position.copy(entry.view.pos);
+      entry.object.scale.setScalar(entry.view.scale);
       this.model.add(entry.object);
-      this.boxModels[spec.model] = entry;
-      // The real model replaced the simple one: move the muzzle if this gun is out
-      entry.listeners.push((e) => { if (this.entry === e) this.attachMuzzle(e.object, e.muzzle); });
+      this.views[spec.model] = entry;
     }
-    entry.object.visible = true;
-    this.current = entry.object;
+    for (const e of Object.values(this.views)) e.object.visible = e === entry;
     this.entry = entry;
+    this.current = entry.object;
     this.attachMuzzle(entry.object, entry.muzzle);
   }
 
-  get spec() { return this.gun.spec; }
   get scoped() { return this.zoom > 0.85; }
   get aiming() { return this.aim > 0.6; }
 
-  // Where the viewmodel group goes so the top of the gun (its sights) sits exactly on the
-  // centre of the screen. Measured from the gun's own meshes, so it fits every model,
-  // and re-measured when a real model replaces the simple stand-in.
+  // Where the viewmodel group goes so the gun's sights (front post, red dot, holo
+  // reticle) sit exactly on the centre of the screen, with the eye behind the rear sight
   sight() {
-    const cur = this.current;
-    let n = 0;
-    cur.traverse((o) => { if (o.isMesh && o.visible) n++; });
-    const key = `${cur.uuid}|${n}|${this.gun.spec.name}`;
-    if (this.sightCache && this.sightCache.key === key) return this.sightCache;
-    this.model.updateMatrixWorld(true);
-    _inv.copy(this.model.matrixWorld).invert();
-    const box = new THREE.Box3();
-    cur.traverse((o) => {
-      if (!o.isMesh || o === this.flash) return;
-      for (let p = o; p && p !== this.model; p = p.parent) if (!p.visible) return;
-      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-      _bb.copy(o.geometry.boundingBox).applyMatrix4(_rel.multiplyMatrices(_inv, o.matrixWorld));
-      box.union(_bb);
-    });
-    if (box.isEmpty()) box.set(new THREE.Vector3(-0.03, -0.1, -0.15), new THREE.Vector3(0.03, 0.05, 0.1));
-    this.sightCache = {
-      key,
-      x: -(box.min.x + box.max.x) / 2,
-      y: -box.max.y + 0.004,
-      z: -(this.gun.spec.adsEye ?? ADS_EYE) - box.max.z,
-    };
-    return this.sightCache;
+    const e = this.entry;
+    const v = e.view;
+    const s = e.sight;
+    const p = _sp.set(s.x, s.y, s.z).multiplyScalar(v.scale).add(v.pos);
+    if (s.tilt) p.applyAxisAngle(_X, s.tilt);
+    return { x: -p.x, y: -p.y, z: -s.dist - p.z, tilt: s.tilt || 0 };
   }
+
+  get spec() { return this.gun.spec; }
   get ammo() { return this.gun.ammo; }
   get magSize() { return this.gun.magSize; }
   get reserve() { return this.gun.reserve; }
@@ -220,11 +133,13 @@ export class Firearm {
     const spec = this.gun.spec;
     this.flashTimer = 0.05;
     this.flash.visible = true;
+    this.slideKick = 1;
     this.applyRecoil(spec.kick);
     this.muzzle.getWorldPosition(_muzzle);
     world.addTracer(_muzzle, r.end);
     return r;
   }
+
 
   // One shot's recoil. The view climbs a fixed amount per shot (less once the climb cap is
   // reached), and after a few shots in a spray it sways side to side in the same pattern
@@ -268,25 +183,20 @@ export class Firearm {
     this.model.rotation.x = 0.32 * pose + 0.6 * draw - 0.08 * slap;
     this.model.rotation.z = 0.5 * pose;
     this.model.rotation.y = -0.05 + 0.1 * pose;
-    this.model.position.x = 0.24 - 0.08 * pose;
+    this.model.position.x = this.entry.view.hip.x - 0.08 * pose;
     this.model.position.y += 0.015 * slap + 0.07 * pose;
 
-    // Magazine: out by 45%, back in by 75%
+    // Magazine: out by 45%, back in by 75%. It drops along the grip and a fresh one rises.
     const drop = reloading ? (p < 0.45 ? ss(p, 0.12, 0.45) : 1 - ss(p, 0.45, 0.75)) : 0;
-    const pistol = g.spec.model === 'pistol';
     const e = this.entry;
-    const mag = pistol ? this.pistolMag : e && e.mag;
-    if (!mag) return;
-    if (pistol || e.fakeMag) {
-      // The real models have their own magazine; this one shows only while it is out of the gun
-      mag.visible = reloading && drop > 0.08;
-      mag.position.copy(pistol ? this.pistolMagHome : e.magHome);
-      mag.position.y -= 0.25 * drop;
-    } else {
-      mag.position.set(0, -0.32 * drop, 0.04 * drop);
-      mag.rotation.x = -0.4 * drop;
-      mag.visible = drop < 0.97;
-    }
+    if (!e) return;
+    e.mag.position.set(e.magHome.x, e.magHome.y - 0.3 * drop, e.magHome.z + 0.03 * drop);
+    e.mag.rotation.x = -0.3 * drop;
+    e.mag.visible = drop < 0.97;
+    // The slide/bolt kicks back on each shot; a pistol's slide locks back when empty
+    const travel = g.spec.model === 'pistol' ? 0.03 : 0.012;
+    const locked = g.spec.model === 'pistol' && g.ammo === 0 && !reloading ? 1 : 0;
+    e.slide.position.z = e.slideHome.z + travel * Math.max(this.slideKick, locked);
   }
 
   update(dt) {
@@ -312,6 +222,7 @@ export class Firearm {
     this.player.ads = this.scoped;
     this.player.aiming = this.aiming;
 
+    this.slideKick *= Math.exp(-28 * dt);
     // A burst ends once the trigger has been off for a moment
     this.sinceShot += dt;
     if (this.sinceShot > Math.max(0.22, spec.fireInterval * 1.6)) this.spray = 0;
@@ -351,8 +262,9 @@ export class Firearm {
     const draw = this.drawTimer / DRAW_TIME;
     const pos = this.model.position;
     const rot = this.model.rotation;
-    pos.z = VIEW_BASE_Z;
-    pos.y = VIEW_BASE_Y - 0.22 * draw * draw - 0.12 * this.zoom;
+    const hip = this.entry.view.hip;
+    pos.z = hip.z;
+    pos.y = hip.y - 0.22 * draw * draw - 0.12 * this.zoom;
     // Behind the scope the gun itself is hidden (the overlay draws the scope)
     this.current.visible = this.zoom < 0.6;
 
@@ -365,7 +277,7 @@ export class Firearm {
       pos.x += (s.x - pos.x) * k;
       pos.y += (s.y - pos.y) * k;
       pos.z += (s.z - pos.z) * k;
-      rot.x *= 1 - k;
+      rot.x = rot.x * (1 - k) + s.tilt * k;
       rot.y *= 1 - k;
       rot.z *= 1 - k;
     }
