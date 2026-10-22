@@ -25,6 +25,7 @@ import { buildControlsPanel } from './controls-panel.js';
 import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
 import { createDust } from './dust.js';
+import { DeathCam } from './deathcam.js';
 
 // Low-latency canvas: `desynchronized` lets the browser present frames without
 // waiting on the page compositor where supported (Chrome, Edge).
@@ -79,15 +80,39 @@ onBotsChange((n) => { if (match.state === 'warmup') bots.setCount(n); });
 const weapon = new Firearm(camera, scene, player);
 const knife = new Knife(camera, scene, player);
 // Every spawn (including a new match) starts with a fresh handgun; box weapons are lost
-player.onRespawn = () => weapon.equip(HANDGUN);
+player.onRespawn = () => { weapon.equip(HANDGUN); setWeapon(weapon); };
 let active = weapon;
 
-// A new match also moves the mystery boxes to new random spots
+// A new match also moves the mystery boxes to new random spots. The camera swoops down
+// from above the spawn into first person during the countdown.
+let boxHintShown = false;
 function startMatch() {
   bots.setCount(settings.bots);
   boxes.place();
   match.start();
   stats.start();
+  deathCam.reset();
+  deathCam.startIntro();
+  deathInfo = null;
+  cardKey = '';
+  savedNote = '';
+  if (!boxHintShown) {
+    boxHintShown = true;
+    showToast(`GOLD  ◆  ON YOUR SCREEN = MYSTERY BOX   ·   [${bindLabel('interact')}] TO OPEN`, '#ffd27a', 5);
+  }
+}
+
+// Play again: a quick fade to black hides the jump to the new spawn
+let resetting = false;
+function restartMatch() {
+  if (resetting) return;
+  resetting = true;
+  wipe.style.opacity = '1';
+  setTimeout(() => {
+    startMatch();
+    wipe.style.opacity = '0';
+    resetting = false;
+  }, 300);
 }
 
 // Per-match stats, saved to the profile (or this browser for guests) when the match ends
@@ -98,6 +123,7 @@ const stats = new MatchStats({
 
 const dust = createDust(scene);
 const postfx = createPostFx(renderer, scene, camera);
+const deathCam = new DeathCam({ camera, player, world, grade: postfx.grade.uniforms });
 
 // ---- UI ----
 const hud = document.getElementById('hud');
@@ -105,7 +131,11 @@ const overlay = document.getElementById('overlay');
 const crosshair = document.getElementById('crosshair');
 const hitmarker = document.getElementById('hitmarker');
 const damageVignette = document.getElementById('damage');
-const deadMsg = document.getElementById('dead');
+const deathCard = document.getElementById('deathcard');
+const countdownEl = document.getElementById('countdown');
+const countdownNum = countdownEl.firstElementChild;
+const wipe = document.getElementById('wipe');
+const markersEl = document.getElementById('markers');
 const lockMsg = document.getElementById('lockmsg');
 const feed = document.getElementById('feed');
 const banner = document.getElementById('banner');
@@ -185,7 +215,7 @@ document.addEventListener('keydown', (e) => {
   }
   // Enter starts a new match once you are out or the match is over
   if (e.code === 'Enter' && !e.repeat && (match.state === 'over' || (match.state === 'live' && player.dead))) {
-    startMatch();
+    restartMatch();
   }
 });
 
@@ -234,6 +264,21 @@ window.addEventListener('resize', () => {
   postfx.resize(window.innerWidth, window.innerHeight);
 });
 
+// How the player went down, for the elimination card
+let deathInfo = null;
+world.onKill((killer, victim, how) => {
+  if (victim !== player) return;
+  const by = killer && killer !== player ? killer : null;
+  deathInfo = {
+    killer: by,
+    how,
+    weapon: how === 'knife' ? 'Knife' : by && by.gun ? by.gun.spec.label : '',
+    dist: by ? Math.round(by.position.distanceTo(player.position)) : 0,
+  };
+  deathCam.start(by);
+  weapon.release();
+});
+
 // Kill feed, newest on top, each line fades after a few seconds
 world.onKill((killer, victim, how) => {
   const line = document.createElement('div');
@@ -254,14 +299,18 @@ world.onKill((killer, victim, how) => {
 // Profiles: sign-in card, profile chip and stats screen in the menu. Signed-in players
 // show their name in the kill feed.
 const account = buildAccountUI(overlay, (name) => { player.name = name || 'You'; });
+// While the elimination / victory card is up it says so itself, instead of a toast on top of it
+let savedNote = '';
 stats.onSaved = (record) => {
-  showToast(record.win ? 'VICTORY SAVED TO YOUR STATS' : `MATCH SAVED · #${record.place} of ${record.total}`, '#dfe9ff', 2.5);
+  savedNote = 'Saved to your stats';
+  if (!player.dead && !record.win) showToast(`MATCH SAVED · #${record.place} of ${record.total}`, '#dfe9ff', 2.5);
 };
 initProfile().catch((e) => console.warn('Profiles unavailable', e));
 
 const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 if (DEBUG) window.agilos = {
   player, weapon, knife, setWeapon, world, nav, bots, match, boxes, renderer, scene, postfx, useBox, stats, account,
+  deathCam, startMatch, restartMatch,
   get kills() { return player.kills; },
 };
 
@@ -427,6 +476,131 @@ function drawMinimap() {
 }
 let mapFrame = 0;
 
+// ---- Elimination / victory card ----
+let cardKey = '';
+function updateDeathCard() {
+  const won = match.state === 'over' && match.winner === player && !player.dead;
+  const show = won || (player.dead && deathCam.t > 0.45);
+  if (!show) {
+    if (cardKey) { cardKey = ''; deathCard.className = ''; }
+    return false;
+  }
+  // Rebuilt only when what it says changes (the match ending while you spectate)
+  const alive = match.aliveCount();
+  const key = `${won}|${match.state}|${alive}|${savedNote}`;
+  if (key === cardKey) return true;
+  const fresh = !cardKey;
+  cardKey = key;
+  const [title, by, stats3, foot] = deathCard.children;
+  if (fresh) {
+    title.textContent = won ? 'VICTORY' : 'ELIMINATED';
+    by.textContent = '';
+    if (won) {
+      by.append(`Last one standing of ${match.total}`);
+    } else {
+      const d = deathInfo || { killer: player.lastAttacker, how: '', weapon: '', dist: 0 };
+      if (d.killer) {
+        const name = document.createElement('b');
+        name.textContent = d.killer.name;
+        by.append('by ', name);
+        const bits = [d.weapon, d.how === 'headshot' ? 'HEADSHOT' : '', d.dist ? `${d.dist} m` : ''].filter(Boolean);
+        if (bits.length) by.append(`  ·  ${bits.join('  ·  ')}`);
+      } else {
+        by.append(d.how === 'fell' ? 'Fell out of the map' : 'Caught outside the ring');
+      }
+    }
+    const c = stats.cur || { kills: player.kills, damageDealt: 0 };
+    stats3.textContent = '';
+    const place = won ? 1 : match.playerPlace || alive + 1;
+    for (const [v, label] of [[`#${place}`, `of ${match.total}`], [c.kills, 'kills'], [Math.round(c.damageDealt), 'damage']]) {
+      const cell = document.createElement('div');
+      const b = document.createElement('b');
+      b.textContent = String(v);
+      const s = document.createElement('span');
+      s.textContent = label;
+      cell.append(b, s);
+      stats3.append(cell);
+    }
+    deathCard.className = `show${won ? ' win' : ''}`;
+  }
+  foot.textContent = '';
+  const kbd = document.createElement('kbd');
+  kbd.textContent = 'ENTER';
+  foot.append(kbd, 'PLAY AGAIN');
+  const note = document.createElement('small');
+  if (match.state === 'over' && !won) note.textContent = match.winner ? `${match.winner.name} won the match` : 'Nobody survived';
+  else if (!won) note.textContent = `${alive} still fighting · watching ${deathInfo && deathInfo.killer && !deathInfo.killer.dead ? deathInfo.killer.name : 'the arena'}`;
+  if (savedNote) note.textContent = note.textContent ? `${note.textContent}  ·  ${savedNote}` : savedNote;
+  if (note.textContent) foot.append(note);
+  return true;
+}
+
+// ---- Countdown: 3, 2, 1, GO ----
+let cdShown = '';
+let goTimer = 0;
+let wasCountdown = false;
+function updateCountdown(dt) {
+  let text = '';
+  if (match.state === 'countdown') {
+    text = String(Math.max(1, Math.ceil(match.timer)));
+    wasCountdown = true;
+  } else if (wasCountdown) {
+    wasCountdown = false;
+    goTimer = 0.8;
+  }
+  goTimer = Math.max(0, goTimer - dt);
+  if (!text && goTimer > 0) text = 'GO';
+  countdownEl.style.display = text ? 'flex' : 'none';
+  countdownEl.lastElementChild.style.visibility = text === 'GO' ? 'hidden' : 'visible';
+  if (text !== cdShown) {
+    cdShown = text;
+    countdownNum.textContent = text;
+    countdownNum.className = '';
+    void countdownNum.offsetWidth; // restart the pop animation
+    countdownNum.className = text === 'GO' ? 'pop go' : 'pop';
+  }
+}
+
+// ---- Mystery box markers on screen ----
+const markerEls = boxes.boxes.map(() => {
+  const m = document.createElement('div');
+  m.className = 'bm';
+  m.append(document.createElement('i'), document.createElement('span'));
+  markersEl.append(m);
+  return m;
+});
+const _mp = new THREE.Vector3();
+function updateMarkers() {
+  const on = player.locked && !player.dead && match.state !== 'over';
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  boxes.boxes.forEach((b, i) => {
+    const el = markerEls[i];
+    _mp.set(b.position.x, b.position.y + 1.15, b.position.z);
+    const dist = _mp.distanceTo(camera.position);
+    if (!on || !b.group.visible || dist < 3.2) { el.style.display = 'none'; return; }
+    _mp.project(camera);
+    let x = _mp.x;
+    let y = _mp.y;
+    const behind = _mp.z > 1;
+    if (behind) { x = -x; y = -y; }
+    const edge = behind || Math.abs(x) > 0.93 || Math.abs(y) > 0.86;
+    // Recharging boxes only show when they're in view
+    if (edge && !b.ready) { el.style.display = 'none'; return; }
+    if (edge) {
+      const s = Math.max(Math.abs(x) / 0.93, Math.abs(y) / 0.86) || 1;
+      x /= s;
+      y /= s;
+    }
+    el.style.display = 'flex';
+    el.style.transform = `translate(${((x * 0.5 + 0.5) * W).toFixed(1)}px, ${((-y * 0.5 + 0.5) * H).toFixed(1)}px) translate(-50%, -100%)`;
+    const cls = `bm${b.ready ? '' : ' cool'}${edge ? ' edge' : ''}`;
+    if (el.className !== cls) el.className = cls;
+    const label = b.ready ? `${Math.round(dist)} m` : `${Math.ceil(b.cooldownLeft)}s`;
+    if (el.lastChild.textContent !== label) el.lastChild.textContent = label;
+  });
+}
+
 let last = performance.now();
 function frame(now) {
   // Clamp both ways: the first rAF timestamp can be earlier than `last`
@@ -436,6 +610,12 @@ function frame(now) {
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
 
   player.update(dt);
+  // Dead or dropping in: the death / intro camera takes over from the eyes
+  if (player.dead && !deathCam.active) deathCam.start(player.lastAttacker);
+  deathCam.update(dt);
+  const viewmodel = !player.dead && deathCam.intro < 0.35;
+  weapon.model.visible = viewmodel && active === weapon;
+  knife.model.visible = viewmodel && active === knife;
   // Held trigger on an automatic weapon: the gun's own fire rate paces the shots
   if (active === weapon && weapon.triggerHeld && weapon.spec.auto && player.locked && !player.frozen && !player.dead) {
     player.syncAim();
@@ -494,14 +674,14 @@ function frame(now) {
   hitmarkerTimer = Math.max(0, hitmarkerTimer - dt);
   hitmarker.style.opacity = String(hitmarkerTimer / 0.15);
   damageVignette.style.opacity = String(player.damageFlash / 0.35);
-  const bannerText = match.bannerText();
+  const cardOn = updateDeathCard();
+  updateCountdown(dt);
+  updateMarkers();
+  document.body.classList.toggle('dead', player.dead);
+  // The old text banner only for what the card and countdown don't cover
+  const bannerText = cardOn || player.dead || match.state === 'countdown' ? '' : match.bannerText();
   banner.style.display = bannerText ? 'flex' : 'none';
   banner.textContent = bannerText;
-  // "Killed by" only when the match banner isn't already saying what happened
-  deadMsg.style.display = player.dead && !bannerText ? 'flex' : 'none';
-  if (player.dead) {
-    deadMsg.textContent = player.lastAttacker ? `KILLED BY ${player.lastAttacker.name.toUpperCase()}` : 'YOU DIED';
-  }
 
   updateAmmo();
   if (++mapFrame % 3 === 0) drawMinimap();
