@@ -40,7 +40,7 @@ const HIGH_PR = Math.min(window.devicePixelRatio, 1.5);
 renderer.setPixelRatio(HIGH_PR);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap; // soft by default since three r180
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.75;
 document.body.appendChild(renderer.domElement);
