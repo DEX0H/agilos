@@ -219,7 +219,7 @@ function pistol(m, accent) {
       left: { fromPose: true, pos: [-0.03, -0.105, 0.075], f: [0.35, 0.4, -0.85], n: [1, 0.1, 0], curl: 'cup', shoulder: [-0.18, -0.36, 0.14], pole: [-0.42, -0.62, 0.05] },
       mag: { pos: [-0.02, -0.17, 0.08], f: [0.2, 0.9, -0.3], n: [1, 0, 0] },
     },
-    view: { pos: new THREE.Vector3(0, -0.02, 0.02), scale: 1.15, hip: { x: 0.12, y: -0.088, z: -0.28 } },
+    view: { pos: new THREE.Vector3(0, -0.02, 0.02), scale: 1.15, hip: { x: 0.1, y: -0.055, z: -0.27 } },
   };
 }
 
@@ -287,7 +287,7 @@ function rifle(m, accent) {
     sight: { x: 0, y: sy, z: -0.05, dist: 0.18 },
     arms: {
       right: { palm: [0, -0.085, 0.086], pos: [0.017, -0.14, 0.14], f: [-0.12, 0.55, -0.83], n: [-1, 0, -0.1], curl: 'trigger', shoulder: [0.24, -0.33, 0.16], pole: [0.48, -0.6, 0.1] },
-      left: { pos: [-0.036, -0.078, -0.26], f: [0.1, 1, -0.25], n: [1, 0, 0], curl: 'support', shoulder: [-0.32, -0.36, 0.02], pole: [-0.65, -0.5, -0.1] },
+      left: { mirror: { palm: [0, 0.002, -0.33], turn: 1.35, roll: Math.PI, inset: 0.012 }, pos: [-0.085, -0.05, -0.258], f: [1, 0.15, -0.35], n: [0, 1, 0], curl: 'support', shoulder: [-0.32, -0.36, 0.02], pole: [-0.65, -0.5, -0.1] },
       mag: { pos: [-0.02, -0.27, -0.07], f: [0.25, 0.9, -0.35], n: [1, 0, 0] },
     },
     view: { pos: new THREE.Vector3(0, 0.035, -0.06), scale: 0.78, hip: { x: 0.16, y: -0.135, z: -0.29 } },
@@ -337,7 +337,7 @@ function smg(m, accent) {
     sight: { x: 0, y: sy, z: -0.07, dist: 0.22 },
     arms: {
       right: { palm: [0, -0.07, 0.064], pos: [0.016, -0.125, 0.115], f: [-0.12, 0.5, -0.86], n: [-1, 0, -0.1], curl: 'trigger', shoulder: [0.24, -0.33, 0.16], pole: [0.48, -0.6, 0.1] },
-      left: { pos: [-0.018, -0.13, -0.095], f: [0.12, 0.45, -0.88], n: [1, 0, 0], curl: 'support', shoulder: [-0.3, -0.37, 0.04], pole: [-0.62, -0.5, -0.1] },
+      left: { mirror: { palm: [0, -0.07, -0.13], turn: 0.22, inset: -0.002, wrapIndex: true }, pos: [-0.035, -0.11, -0.065], f: [0.12, 0.5, -0.86], n: [1, 0, 0], curl: 'fist', shoulder: [-0.3, -0.37, 0.04], pole: [-0.62, -0.5, -0.1] },
       mag: { pos: [-0.02, -0.2, -0.04], f: [0.25, 0.9, -0.35], n: [1, 0, 0] },
     },
     view: { pos: new THREE.Vector3(0, 0.03, -0.03), scale: 0.95, hip: { x: 0.155, y: -0.13, z: -0.29 } },
@@ -394,7 +394,7 @@ function sniper(m, accent) {
     sight: { x: 0, y: sy, z: 0.165, dist: 0.08 },
     arms: {
       right: { palm: [0, -0.078, 0.102], pos: [0.02, -0.13, 0.15], f: [-0.12, 0.6, -0.79], n: [-1, 0, -0.1], curl: 'trigger', shoulder: [0.24, -0.33, 0.16], pole: [0.48, -0.6, 0.1] },
-      left: { pos: [-0.045, -0.1, -0.19], f: [0.1, 1, -0.25], n: [1, 0, 0], curl: 'support', shoulder: [-0.32, -0.36, 0.02], pole: [-0.65, -0.5, -0.1] },
+      left: { mirror: { palm: [0, -0.02, -0.24], turn: 1.35, roll: Math.PI, inset: 0.014 }, pos: [-0.09, -0.066, -0.168], f: [1, 0.15, -0.35], n: [0, 1, 0], curl: 'support', shoulder: [-0.32, -0.36, 0.02], pole: [-0.65, -0.5, -0.1] },
       mag: { pos: [-0.02, -0.13, -0.02], f: [0.25, 0.9, -0.35], n: [1, 0, 0] },
     },
     view: { pos: new THREE.Vector3(0, 0.02, -0.02), scale: 0.72, hip: { x: 0.17, y: -0.14, z: -0.31 } },

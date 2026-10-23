@@ -41,6 +41,7 @@ export const CURLS = {
   fist: { fingers: [[1.25, 1.35, 0.9], grip, grip, grip], thumb: [0.5, 0.6, 0.4] },
 };
 const _X = new THREE.Vector3(1, 0, 0);
+const _Zax = new THREE.Vector3(0, 0, 1);
 
 const _origin = new THREE.Vector3();
 const _dir = new THREE.Vector3();
@@ -127,6 +128,21 @@ export class Firearm {
       t.userData.direct = true;
     };
     place(e.tR, P.right);
+    // Left hand on a fore grip or handguard: the right hand's grip mirrored, around the
+    // left palm point, turned by `turn` (radians about the gun's x axis): about 0 for a
+    // vertical fore grip, -1.35 to lie along a handguard (index finger forward, thumb over
+    // the top, fingers wrapping underneath)
+    if (A.left.mirror) {
+      const L = A.left.mirror;
+      const R = new THREE.Quaternion().setFromAxisAngle(_X, L.turn || 0)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(_Zax, L.roll || 0));
+      const off = P.mirrored.pos.clone().multiplyScalar(k);
+      off.x -= (palmInset + (L.inset || 0)) * k;
+      e.tL.position.set(...L.palm).add(off.applyQuaternion(R));
+      e.tL.quaternion.copy(R).multiply(P.mirrored.quat);
+      e.tL.userData.direct = true;
+      e.leftSupport = { pos: e.tL.position.clone(), quat: e.tL.quaternion.clone() };
+    }
     if (A.left.fromPose) {
       place(e.tL, P.left);
       e.leftSupport = { pos: e.tL.position.clone(), quat: e.tL.quaternion.clone() };
@@ -142,7 +158,9 @@ export class Firearm {
     if (ARMS.pose && !e.posed) this.applyPose(e);
     const reloading = this.gun.reloadTimer > 0;
     const hand = ARMS.pose ? { pose: ARMS.pose.fingers } : null;
-    const leftCurl = A.left.fromPose && hand ? hand : blendCurl(CURLS[A.left.curl], CURLS.mag, reloading ? this.leftOnMag : 0);
+    let leftCurl = blendCurl(CURLS[A.left.curl], CURLS.mag, reloading ? this.leftOnMag : 0);
+    if (ARMS.pose && A.left.fromPose) leftCurl = hand;
+    else if (ARMS.pose && A.left.mirror && !(reloading && this.leftOnMag > 0.5)) leftCurl = { pose: A.left.mirror.wrapIndex ? ARMS.pose.mirrorWrap : ARMS.pose.mirrorFingers };
     return {
       right: { target: e.tR, shoulder: _vec(A.right.shoulder, _s1), pole: _vec(A.right.pole, _p1), curl: hand || CURLS[A.right.curl] },
       left: { target: e.tL, shoulder: _vec(A.left.shoulder, _s2), pole: _vec(A.left.pole, _p2), curl: leftCurl },
