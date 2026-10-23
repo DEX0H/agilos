@@ -77,7 +77,9 @@ function buildPose(gltf, clips) {
   // Same, with the index finger wrapped like the middle one (no trigger on a fore grip)
   const mirrorWrap = new Map(mirrorFingers);
   for (const k of [1, 2, 3]) mirrorWrap.set(`index_0${k}_l`, mirrorFingers.get(`middle_0${k}_l`).clone());
-  return { right, left: rel(model.getObjectByName('hand_l')), fingers, mirrored, mirrorFingers, mirrorWrap };
+  // Wrist -> middle knuckle in the left hand bone's own space
+  const leftFinger = bind.getObjectByName('middle_01_l').position.clone().normalize();
+  return { right, left: rel(model.getObjectByName('hand_l')), fingers, mirrored, mirrorFingers, mirrorWrap, leftFinger };
 }
 const FINGERS = ['index', 'middle', 'ring', 'pinky'];
 const _v1 = new THREE.Vector3();
