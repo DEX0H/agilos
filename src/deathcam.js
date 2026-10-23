@@ -70,6 +70,8 @@ export class DeathCam {
     this.pitch = p.pitch;
     this.rollDir = Math.random() < 0.5 ? -1 : 1;
     this.killer = killer && killer !== p ? killer : null;
+    this.watch = this.killer;     // who the spectator camera is on
+    this.switched = false;        // the player picked someone to watch
     this.orbit = this.yaw;
     this.intro = 0;
     this.spect = null;
@@ -79,6 +81,15 @@ export class DeathCam {
   reset() {
     this.active = false;
     this.killer = null;
+    this.watch = null;
+  }
+
+  // Spectating: watch the next (dir 1) or previous (-1) of `alive`
+  cycle(alive, dir = 1) {
+    if (!alive.length) return;
+    const i = alive.indexOf(this.watch);
+    this.watch = alive[(i + dir + alive.length) % alive.length];
+    this.switched = true;
   }
 
   // The swoop into first person at the start of a match
@@ -152,6 +163,30 @@ export class DeathCam {
     if (lift <= 0) {
       cam.position.copy(_v);
       cam.quaternion.copy(_q1);
+      cam.updateMatrixWorld(true);
+      return true;
+    }
+    // Following a player (picked by the spectator, or the killer once the kill view has
+    // played): over their shoulder, looking where they look
+    const w = this.watch;
+    if (w && !w.dead && (this.switched || t > FALL + HOLD + LIFT + 3)) {
+      const fwdX = -Math.sin(w.yaw);
+      const fwdZ = -Math.cos(w.yaw);
+      const head = _v.set(w.position.x, w.position.y + 1.5, w.position.z);
+      _cam.set(-fwdX * 3 + fwdZ * 0.6, 0.9, -fwdZ * 3 - fwdX * 0.6);
+      const reach = _cam.length();
+      _cam.normalize();
+      const hit = this.world.raycastWorld(head, _cam, reach);
+      _cam.multiplyScalar(Math.max(0.5, Math.min(reach, hit) - 0.3)).add(head);
+      _target.set(head.x + fwdX * 8, head.y + Math.sin(w.pitch) * 8, head.z + fwdZ * 8);
+      lookQuat(_cam, _target, _q2);
+      if (!this.spect) this.spect = { pos: _cam.clone(), quat: _q2.clone() };
+      // Quick catch-up when switching, smooth otherwise
+      const kp = this.switched && this.spect.pos.distanceTo(_cam) > 6 ? 1 : 1 - Math.exp(-8 * dt);
+      this.spect.pos.lerp(_cam, kp);
+      this.spect.quat.slerp(_q2, 1 - Math.exp(-10 * dt));
+      cam.position.lerpVectors(_v.set(this.body.x, this.body.y + eye + bounce, this.body.z), this.spect.pos, lift);
+      cam.quaternion.slerpQuaternions(_q1, this.spect.quat, lift);
       cam.updateMatrixWorld(true);
       return true;
     }

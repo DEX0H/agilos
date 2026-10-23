@@ -87,7 +87,7 @@ export class Firearm {
     this.equip(HANDGUN);
 
     document.addEventListener('keydown', (e) => {
-      if (!capture.action && e.code === settings.binds.reload && !e.repeat) this.gun.reload();
+      if (!capture.action && e.code === settings.binds.reload && !e.repeat && !this.player.dead) this.gun.reload();
     });
   }
 
