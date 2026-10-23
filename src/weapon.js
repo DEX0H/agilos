@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GunState, HANDGUN } from './gun.js';
 import { settings, capture } from './settings.js';
 import { buildViewGun } from './viewguns.js';
-import { basisQuat } from './fparms.js';
+import { basisQuat, ARMS } from './fparms.js';
 
 // The player's gun slot: first-person viewmodel and effects on top of the shared GunState.
 // It starts with the handgun; a mystery box swaps in an SMG, assault rifle or sniper.
@@ -110,14 +110,42 @@ export class Firearm {
     };
   }
 
+  // Once the animator's pistol grip has loaded: the right hand (every gun) and the
+  // pistol's left hand take their placement and finger pose from it, around each gun's
+  // palm point
+  applyPose(e) {
+    const P = ARMS.pose;
+    const A = e.arms;
+    const k = 1 / e.view.scale; // pose offsets are metres; the gun model is scaled
+    // The pose's reference point lies on the hand bone, inside the hand; the grip sits in
+    // the palm hollow, a couple of centimetres toward the palm (to the gun's left)
+    const palmInset = 0.024;
+    const place = (t, rel) => {
+      t.position.set(...A.right.palm).addScaledVector(rel.pos, k);
+      t.position.x += palmInset * k;
+      t.quaternion.copy(rel.quat);
+      t.userData.direct = true;
+    };
+    place(e.tR, P.right);
+    if (A.left.fromPose) {
+      place(e.tL, P.left);
+      e.leftSupport = { pos: e.tL.position.clone(), quat: e.tL.quaternion.clone() };
+      e.leftMag.quat = e.tL.quaternion.clone(); // keeps the same hand angle while reloading
+    }
+    e.posed = true;
+  }
+
   // Pose for the arms this frame
   armPose() {
     const e = this.entry;
     const A = e.arms;
+    if (ARMS.pose && !e.posed) this.applyPose(e);
     const reloading = this.gun.reloadTimer > 0;
+    const hand = ARMS.pose ? { pose: ARMS.pose.fingers } : null;
+    const leftCurl = A.left.fromPose && hand ? hand : blendCurl(CURLS[A.left.curl], CURLS.mag, reloading ? this.leftOnMag : 0);
     return {
-      right: { target: e.tR, shoulder: _vec(A.right.shoulder, _s1), pole: _vec(A.right.pole, _p1), curl: CURLS[A.right.curl] },
-      left: { target: e.tL, shoulder: _vec(A.left.shoulder, _s2), pole: _vec(A.left.pole, _p2), curl: blendCurl(CURLS[A.left.curl], CURLS.mag, reloading ? this.leftOnMag : 0) },
+      right: { target: e.tR, shoulder: _vec(A.right.shoulder, _s1), pole: _vec(A.right.pole, _p1), curl: hand || CURLS[A.right.curl] },
+      left: { target: e.tL, shoulder: _vec(A.left.shoulder, _s2), pole: _vec(A.left.pole, _p2), curl: leftCurl },
     };
   }
 

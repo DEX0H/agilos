@@ -8,15 +8,17 @@ const base = import.meta.env.BASE_URL;
 const loader = new THREE.TextureLoader();
 
 // Metres covered by one repeat of each texture
+// Stone, wood and paint aren't metal at all; the rusty and corrugated metal only a little,
+// so the map reads matte instead of glossy
 export const SURFACES = {
-  asphalt: { tile: 6 },
-  floor: { tile: 3 },
-  concrete: { tile: 3 },
-  brick: { tile: 2.5 },
-  plaster: { tile: 3 },
-  rust: { tile: 2 },
-  corrugated: { tile: 3, metalness: 0.4 },
-  planks: { tile: 1.6 },
+  asphalt: { tile: 6, metalness: 0 },
+  floor: { tile: 3, metalness: 0 },
+  concrete: { tile: 3, metalness: 0 },
+  brick: { tile: 2.5, metalness: 0 },
+  plaster: { tile: 3, metalness: 0 },
+  rust: { tile: 2, metalness: 0.35 },
+  corrugated: { tile: 3, metalness: 0.2 },
+  planks: { tile: 1.6, metalness: 0 },
 };
 
 const texCache = new Map();

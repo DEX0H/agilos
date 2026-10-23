@@ -195,7 +195,7 @@ export async function dressCity(scene, arena) {
     const housing = new THREE.InstancedMesh(new THREE.BoxGeometry(1.5, 0.05, 0.16),
       new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.6, metalness: 0.5 }), tubes.length);
     const glow = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 0.03, 0.08),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.4, 2.1) }), tubes.length);
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.7, 1.5) }), tubes.length);
     tubes.forEach(([x, y, z], i) => {
       housing.setMatrixAt(i, _m.makeTranslation(x, y + 0.02, z));
       glow.setMatrixAt(i, _m.makeTranslation(x, y - 0.01, z));
@@ -210,13 +210,18 @@ export async function dressCity(scene, arena) {
 
 // Glass reads as dark reflective panes (opaque: it blocks bullets in the game anyway);
 // the fake interiors hide behind it.
-const glass = new THREE.MeshStandardMaterial({ color: 0x1b2430, metalness: 0.9, roughness: 0.08 });
+const glass = new THREE.MeshStandardMaterial({ color: 0x222b35, metalness: 0.35, roughness: 0.32, envMapIntensity: 0.6 });
 function fixMaterial(m) {
   if (/glass/i.test(m.name)) return glass;
   // The kit's vertex colours drive a wear shader in engines; as plain colours they turn
   // some walls nearly black
   m.vertexColors = false;
   m.side = THREE.FrontSide;
+  // Matte, like the rest of the map
+  if (m.metalness !== undefined) {
+    m.metalness = Math.min(m.metalness, 0.25);
+    m.roughness = Math.max(m.roughness, 0.6);
+  }
   if (m.transparent) { m.transparent = false; m.opacity = 1; }
   return m;
 }

@@ -238,7 +238,8 @@ export class GunState {
       res.headshot = hit.headshot;
       res.target = hit.target;
       end.copy(hit.point);
-      const dmg = this.spec.damage * (hit.headshot ? this.spec.headshotMult : 1) * falloff(this.spec, hit.distance);
+      // damageMult: bot difficulty (the player's is 1)
+      const dmg = this.spec.damage * (hit.headshot ? this.spec.headshotMult : 1) * falloff(this.spec, hit.distance) * (this.owner.damageMult ?? 1);
       res.kill = hit.target.takeDamage(dmg, this.owner);
       if (res.kill) world.reportKill(this.owner, hit.target, hit.headshot ? 'headshot' : this.spec.name);
     }

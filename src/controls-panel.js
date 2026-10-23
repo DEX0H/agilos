@@ -1,5 +1,6 @@
 import {
   ACTIONS, settings, bindLabel, bind, capture, resetDefaults, setLayout, setSens, setBots, MIN_BOTS, MAX_BOTS,
+  setDifficulty, DIFFICULTIES,
   detectedLayout, onSettingsChange,
 } from './settings.js';
 
@@ -74,7 +75,18 @@ export function buildControlsPanel(container, hints) {
   botsRow.append(botsWrap);
   botsSlider.addEventListener('input', () => { setBots(parseInt(botsSlider.value, 10)); refresh(); });
   botsVal.addEventListener('change', () => { setBots(parseInt(botsVal.value, 10)); refresh(); });
-  general.append(layoutRow, sensRow, botsRow);
+  // Bot difficulty
+  const diffRow = el('label', 'field');
+  diffRow.append(el('span', 'field-name', 'Difficulty'));
+  const diffSel = el('select');
+  for (const d of DIFFICULTIES) {
+    const o = el('option', '', d[0].toUpperCase() + d.slice(1));
+    o.value = d;
+    diffSel.append(o);
+  }
+  diffSel.addEventListener('change', () => { setDifficulty(diffSel.value); refresh(); });
+  diffRow.append(diffSel);
+  general.append(layoutRow, sensRow, botsRow, diffRow);
   container.append(general);
 
   // Key bindings
@@ -125,6 +137,7 @@ export function buildControlsPanel(container, hints) {
     }
     sel.value = settings.layout;
     botsSlider.value = String(settings.bots);
+    diffSel.value = settings.difficulty;
     botsVal.value = String(settings.bots);
     slider.value = String(settings.sens);
     sensVal.value = settings.sens.toFixed(2);
