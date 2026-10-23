@@ -307,6 +307,25 @@ export class FPArms {
       this.right = new Arm(g, 'r', this.group);
       this.left = new Arm(g, 'l', this.group);
       ARMS.pose = buildPose(g, clips);
+      // Left-hand finger pose part way between straight (bind) and the full wrap, so a
+      // hand under a handguard can curl up its sides without the fingertips going in
+      if (ARMS.pose) {
+        const bindByName = new Map([...this.left.bind].map(([b, q]) => [b.name, q]));
+        const cache = new Map();
+        ARMS.pose.partialWrap = (s, thumb = s) => {
+          const key = `${s.toFixed(2)}|${thumb.toFixed(2)}`;
+          if (!cache.has(key)) {
+            const m = new Map();
+            for (const [name, q] of ARMS.pose.mirrorWrap) {
+              const b0 = bindByName.get(name);
+              const t = name.startsWith('thumb') ? thumb : s;
+              m.set(name, b0 ? b0.clone().slerp(q, t) : q.clone());
+            }
+            cache.set(key, m);
+          }
+          return cache.get(key);
+        };
+      }
       // Each finger joint bends about the axis the animator used: take it from the pose
       // (bind -> pose rotation), for both hands. Straight-finger rest poses carry no hint
       // of which side the palm is on, so guessing it had the left hand curling backwards.
