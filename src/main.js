@@ -48,7 +48,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap; // soft by default since three r180
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.75;
+renderer.toneMappingExposure = 1.5;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -58,7 +58,7 @@ scene.fog = new THREE.Fog(HORIZON, 55, 170);
 // Room reflections for PBR materials (RoomEnvironment ships with three.js, MIT)
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.6;
+scene.environmentIntensity = 0.32; // soft fill, not mirror-like reflections
 
 const sky = createSky(scene);
 
@@ -167,6 +167,7 @@ function startMatch() {
   deathCam.startIntro();
   deathInfo = null;
   cardKey = '';
+  deathCard.className = '';
   savedNote = '';
   if (!boxHintShown) {
     boxHintShown = true;
@@ -322,8 +323,10 @@ document.addEventListener('pointerlockchange', () => {
   overlay.style.display = locked ? 'none' : 'flex';
   crosshair.style.display = locked ? 'block' : 'none';
   if (locked) lockMsg.style.display = 'none';
-  // First time you click in, the match begins
+  // First time you click in, the match begins; after dying or a finished match, clicking
+  // back in starts a new one
   if (locked && match.state === 'warmup') startMatch();
+  else if (locked && (match.state === 'over' || player.dead)) restartMatch();
   if (!locked) weapon.release();
 });
 
@@ -340,6 +343,11 @@ document.addEventListener('mousedown', (e) => {
   if (!player.locked) return;
   if (e.button === 2) {
     if (active === weapon) weapon.scopeHeld = true;
+    return;
+  }
+  // Dead or match over: a click plays again (once the card has had a moment)
+  if (e.button === 0 && (player.dead || match.state === 'over') && (deathCam.t > 1 || match.state === 'over')) {
+    restartMatch();
     return;
   }
   if (e.button !== 0 || player.frozen) return;
@@ -599,7 +607,10 @@ function updateDeathCard() {
   const won = match.state === 'over' && match.winner === player && !player.dead;
   const show = won || (player.dead && deathCam.t > 0.45);
   if (!show) {
-    if (cardKey) { cardKey = ''; deathCard.className = ''; }
+    // Always clear it: a new match resets cardKey before this runs, which used to leave
+    // the elimination card up over the new game
+    cardKey = '';
+    if (deathCard.className) deathCard.className = '';
     return false;
   }
   // Rebuilt only when what it says changes (the match ending while you spectate)
@@ -642,8 +653,11 @@ function updateDeathCard() {
   }
   foot.textContent = '';
   const kbd = document.createElement('kbd');
-  kbd.textContent = 'ENTER';
-  foot.append(kbd, 'PLAY AGAIN');
+  kbd.textContent = 'CLICK';
+  foot.append(kbd, 'OR ');
+  const kbd2 = document.createElement('kbd');
+  kbd2.textContent = 'ENTER';
+  foot.append(kbd2, 'PLAY AGAIN');
   const note = document.createElement('small');
   if (match.state === 'over' && !won) note.textContent = match.winner ? `${match.winner.name} won the match` : 'Nobody survived';
   else if (!won) note.textContent = `${alive} still fighting · watching ${deathInfo && deathInfo.killer && !deathInfo.killer.dead ? deathInfo.killer.name : 'the arena'}`;

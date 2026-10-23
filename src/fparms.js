@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { loadCharacter } from './models.js';
+import { loadCharacter, loadAnimations } from './models.js';
 
 // First-person arms from the real character model (the same rigged human the bots use):
 // only the forearms and hands are drawn, the hands wear dark tactical gloves, and each
@@ -12,7 +12,40 @@ import { loadCharacter } from './models.js';
 // knuckles, before curling) and +Z the palm normal (out of the palm, toward the grip).
 
 const STAND_H = 1.8;
-export const ARMS = { curlSign: 1 }; // which way the finger joints bend (rig convention)
+export const ARMS = { curlSign: 1, pose: null }; // curlSign: which way finger joints bend
+
+// The animator's two-handed pistol grip (Pistol_Aim_Neutral, Quaternius Universal
+// Animation Library): where each hand sits relative to a gun held at the right palm, and
+// every finger joint's rotation. First-person hands copy it, so the grip looks hand-made.
+function buildPose(gltf, clips) {
+  const clip = clips.find((c) => c.name === 'Pistol_Aim_Neutral');
+  if (!clip) return null;
+  const model = SkeletonUtils.clone(gltf.scene);
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model, true);
+  model.scale.setScalar(STAND_H / Math.max(0.01, box.max.y - box.min.y));
+  const mixer = new THREE.AnimationMixer(model);
+  mixer.clipAction(clip).play();
+  mixer.update(0.3);
+  model.updateMatrixWorld(true);
+  const handR = model.getObjectByName('hand_r');
+  const mid = model.getObjectByName('middle_01_r');
+  // The gun frame the bots use: origin at the palm centre, -Z along the character's facing
+  const gp = handR.localToWorld(mid.position.clone().multiplyScalar(0.55));
+  const gq = model.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion().setFromAxisAngle(_Y, Math.PI));
+  const gInv = new THREE.Matrix4().compose(gp, gq, new THREE.Vector3(1, 1, 1)).invert();
+  const rel = (bone) => {
+    const m = new THREE.Matrix4().compose(bone.getWorldPosition(new THREE.Vector3()), bone.getWorldQuaternion(new THREE.Quaternion()), new THREE.Vector3(1, 1, 1));
+    m.premultiply(gInv);
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    m.decompose(pos, quat, new THREE.Vector3());
+    return { pos, quat };
+  };
+  const fingers = new Map();
+  model.traverse((o) => { if (o.isBone && /^(index|middle|ring|pinky|thumb)_0[123]_[lr]$/.test(o.name)) fingers.set(o.name, o.quaternion.clone()); });
+  return { right: rel(handR), left: rel(model.getObjectByName('hand_l')), fingers };
+}
 const FINGERS = ['index', 'middle', 'ring', 'pinky'];
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -74,7 +107,7 @@ function armMaterial(base, side) {
         if (abs(vPart - ${keepA.toFixed(1)}) > 0.5 && abs(vPart - ${(keepA + 1).toFixed(1)}) > 0.5) discard;
         float gl = smoothstep(0.45, 0.75, vGlove);
         // Skin a touch warmer and less washed out; gloves dark grey fabric
-        diffuseColor.rgb *= vec3(0.86, 0.76, 0.68);
+        diffuseColor.rgb *= vec3(0.8, 0.64, 0.52); // light tan
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.052, 0.055), gl);`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(max(roughnessFactor, 0.55), 0.8, smoothstep(0.45, 0.75, vGlove));')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = 0.0;');
@@ -205,11 +238,21 @@ class Arm {
     const E = S.clone().addScaledVector(dir, a * cosA).addScaledVector(pv, a * Math.sqrt(1 - cosA * cosA));
     this.aim(this.upper, E0, E);
     this.aim(this.lower, this.hand.getWorldPosition(new THREE.Vector3()), T);
-    // Hand orientation from the grip frame
-    target.getWorldQuaternion(_q2).multiply(this.handBasisInv);
+    // Hand orientation: copied straight from the target (animator pose), or from the grip
+    // frame (finger direction / palm normal)
+    target.getWorldQuaternion(_q2);
+    if (!target.userData.direct) _q2.multiply(this.handBasisInv);
     this.lower.getWorldQuaternion(_q1).invert();
     this.hand.quaternion.copy(_q1.multiply(_q2));
-    // Fingers
+    // Fingers: the animator's pose, or curled by angle
+    if (curl.pose) {
+      for (const bn of [...this.fingers.flat(), ...this.thumb]) {
+        const q = curl.pose.get(bn.name);
+        if (q) bn.quaternion.copy(q);
+      }
+      this.root.updateMatrixWorld(true);
+      return;
+    }
     for (let i = 0; i < 4; i++) {
       this.fingers[i].forEach((bn, k) => bn.quaternion.copy(this.bind.get(bn)).multiply(_q1.setFromAxisAngle(this.curlAxes.get(bn), ARMS.curlSign * curl.fingers[i][k])));
     }
@@ -225,9 +268,10 @@ export class FPArms {
     camera.add(this.group);
     this.right = null;
     this.left = null;
-    this.ready = loadCharacter('male').then((g) => {
+    this.ready = Promise.all([loadCharacter('male'), loadAnimations()]).then(([g, clips]) => {
       this.right = new Arm(g, 'r', this.group);
       this.left = new Arm(g, 'l', this.group);
+      ARMS.pose = buildPose(g, clips);
     }).catch((e) => console.warn('First-person arms failed to load', e));
   }
 

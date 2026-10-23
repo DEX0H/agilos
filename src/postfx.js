@@ -81,7 +81,8 @@ export function createPostFx(renderer, scene, camera) {
   gtao.blendIntensity = 0.9;
   composer.addPass(gtao);
 
-  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.4, 0.5, 0.9);
+  // Slight bloom: only real light sources (lamps, trims, muzzle flash) glow a little
+  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.22, 0.45, 1.0);
   composer.addPass(bloom);
 
   const grade = new ShaderPass(GradeShader);

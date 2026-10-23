@@ -18,7 +18,7 @@ const WALL_T = 0.3;
 const MAX_HEIGHT = 12;
 const LOW = new THREE.Color(0x6b6f76);
 const HIGH = new THREE.Color(0xb49a72);
-const TRIM_COLOR = new THREE.Color(2.2, 0.9, 0.3); // HDR so it blooms slightly
+const TRIM_COLOR = new THREE.Color(1.35, 0.6, 0.22); // warm ledge lights, a slight glow
 const TRIM_W = 0.08;
 const SIDE_ORDER = ['N', 'E', 'S', 'W'];
 

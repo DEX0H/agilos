@@ -35,7 +35,8 @@ const defaults = () => Object.fromEntries(ACTIONS.map(([a, , code]) => [a, code]
 export const MIN_BOTS = 1;
 export const MAX_BOTS = 15;
 export const DEFAULT_BOTS = 4;
-export const settings = { binds: defaults(), sens: DEFAULT_SENS, layout: 'auto', bots: DEFAULT_BOTS };
+export const DIFFICULTIES = ['easy', 'normal', 'hard'];
+export const settings = { binds: defaults(), sens: DEFAULT_SENS, layout: 'auto', bots: DEFAULT_BOTS, difficulty: 'normal' };
 
 // Saved settings are untrusted input (anyone can edit their own localStorage), so only
 // known actions with plausible key codes, a known layout and a finite sensitivity are accepted.
@@ -56,6 +57,7 @@ function applySaved(saved) {
     }
     if (typeof saved.layout === 'string' && LAYOUTS.has(saved.layout)) settings.layout = saved.layout;
     if (Number.isInteger(saved.bots)) settings.bots = Math.min(MAX_BOTS, Math.max(MIN_BOTS, saved.bots));
+    if (DIFFICULTIES.includes(saved.difficulty)) settings.difficulty = saved.difficulty;
   }
 }
 try {
@@ -73,7 +75,7 @@ export function applyRemoteSettings(remote) {
 
 // A plain copy for syncing to the profile
 export function settingsSnapshot() {
-  return { binds: { ...settings.binds }, sens: settings.sens, layout: settings.layout, bots: settings.bots };
+  return { binds: { ...settings.binds }, sens: settings.sens, layout: settings.layout, bots: settings.bots, difficulty: settings.difficulty };
 }
 
 export function save() {
@@ -91,6 +93,13 @@ export function radPerCount() {
 // Bots in the next match
 export function setBots(n) {
   settings.bots = Math.min(MAX_BOTS, Math.max(MIN_BOTS, Math.round(n) || DEFAULT_BOTS));
+  save();
+  for (const fn of botListeners) fn(settings.bots);
+}
+// Bot difficulty: takes effect straight away (bots read it every frame)
+export function setDifficulty(d) {
+  if (!DIFFICULTIES.includes(d)) return;
+  settings.difficulty = d;
   save();
   for (const fn of botListeners) fn(settings.bots);
 }

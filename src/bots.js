@@ -5,6 +5,20 @@ import { Character, STAND_H, NO_INPUT } from './character.js';
 import { GunState, HANDGUN } from './gun.js';
 import { loadCharacter, loadAnimations, loadPistol, normalizeGun } from './models.js';
 import { buildGunModel } from './gunmodels.js';
+import { settings } from './settings.js';
+
+// Difficulty (menu setting, applied live). Hard is how bots played before levels existed.
+//   speed     movement speed factor        reaction  seconds before the first shot (+random)
+//   turn      aim swing, rad/s             noise     aim wobble when a target appears
+//   floor     wobble that never settles    head      chance to go for headshots
+//   gap       extra pause between shots    damage    their damage factor
+//   sight     how far they keep tracking   hop       how often they jump around in fights
+const DIFFICULTY = {
+  easy: { speed: 0.68, reaction: [0.9, 0.6], turn: 2.8, noise: 0.17, floor: 0.6, head: 0.04, gap: 0.4, damage: 0.55, sight: 26, hop: 0.35 },
+  normal: { speed: 0.84, reaction: [0.62, 0.45], turn: 4.2, noise: 0.12, floor: 0.45, head: 0.1, gap: 0.18, damage: 0.8, sight: 32, hop: 0.7 },
+  hard: { speed: 1, reaction: [0.45, 0.4], turn: 6, noise: 0.09, floor: 0.35, head: 0.15, gap: 0, damage: 1, sight: 38, hop: 1 },
+};
+const diff = () => DIFFICULTY[settings.difficulty] || DIFFICULTY.normal;
 
 // Animations that play once and hold their last frame
 const ONE_SHOT_ANIMS = ['Jump_Start', 'Jump_Land', 'Death01', 'Pistol_Shoot', 'Pistol_Reload', 'Hit_Chest', 'Hit_Head', 'Roll'];
@@ -25,17 +39,10 @@ const COLORS = [
 ];
 
 // Perception and aim
-const SIGHT_RANGE = 38;
 const PERCEPTION_INTERVAL = 0.15;
 const FORGET_TIME = 3.5;          // seconds a target is chased after losing sight
 const ENGAGE_RANGE = 30;          // only start fights inside this distance
-const REACTION_MIN = 0.45;        // seconds from first sight to first shot
-const REACTION_RAND = 0.4;
-const TURN_RATE = 6;              // radians per second the aim can swing
-const AIM_NOISE = 0.09;           // radians of aim wobble when a target is first seen
 const AIM_SETTLE = 2.5;           // seconds of tracking to reach best aim
-const MIN_NOISE = 0.35;           // fraction of the wobble that never goes away
-const HEAD_AIM_CHANCE = 0.15;     // chance per engagement to go for the head
 const FIRE_CONE = 0.09;           // fire when aim is within this of the target
 const SHOT_GAP_MIN = 0.15;        // extra human-ish delay between shots
 const SHOT_GAP_RAND = 0.3;
@@ -439,7 +446,7 @@ export class Bot extends Character {
     const eye = this.eye();
     let best = null;
     // Keep tracking a current target out to full sight range; new fights start closer
-    let bestD = this.target ? SIGHT_RANGE : ENGAGE_RANGE;
+    let bestD = this.target ? diff().sight : Math.min(ENGAGE_RANGE, diff().sight);
     for (const c of this.world.combatants) {
       if (c === this || c.dead || c.shielded) continue; // no point shooting a spawn shield
       const ce = c.eye();
@@ -456,9 +463,9 @@ export class Bot extends Character {
 
     if (best) {
       if (best !== this.target || !this.targetVisible) {
-        this.reaction = REACTION_MIN + Math.random() * REACTION_RAND;
+        this.reaction = diff().reaction[0] + Math.random() * diff().reaction[1];
         this.trackTime = 0;
-        this.aimHead = Math.random() < HEAD_AIM_CHANCE;
+        this.aimHead = Math.random() < diff().head;
       }
       this.target = best;
       this.targetVisible = true;
@@ -618,7 +625,7 @@ export class Bot extends Character {
       const e = this.eye();
       _to.set(t.position.x - e.x, t.position.y + aimY - e.y, t.position.z - e.z);
       const flat = Math.hypot(_to.x, _to.z);
-      const noise = AIM_NOISE * Math.max(MIN_NOISE, 1 - this.trackTime / AIM_SETTLE);
+      const noise = diff().noise * Math.max(diff().floor, 1 - this.trackTime / AIM_SETTLE);
       wantYaw = Math.atan2(-_to.x, -_to.z) + this.noiseYaw * noise;
       wantPitch = Math.atan2(_to.y, flat) + this.noisePitch * noise;
     } else if (t) {
@@ -627,8 +634,9 @@ export class Bot extends Character {
     } else if (Math.hypot(this.velocity.x, this.velocity.z) > 1) {
       wantYaw = Math.atan2(-this.velocity.x, -this.velocity.z);
     }
-    this.yaw = approach(this.yaw, wantYaw, TURN_RATE * dt);
-    this.pitch += Math.max(-TURN_RATE * dt, Math.min(TURN_RATE * dt, wantPitch - this.pitch));
+    const turn = diff().turn;
+    this.yaw = approach(this.yaw, wantYaw, turn * dt);
+    this.pitch += Math.max(-turn * dt, Math.min(turn * dt, wantPitch - this.pitch));
 
     // --- Shoot ---
     this.shotGap -= dt;
@@ -650,7 +658,7 @@ export class Bot extends Character {
           this.flashTimer = 0.05;
           // Automatic weapons fire in bursts; others keep a human-ish gap between shots
           if (spec.auto) this.shotGap = Math.random() < BURST_PAUSE_CHANCE ? 0.25 + Math.random() * 0.3 : 0;
-          else this.shotGap = SHOT_GAP_MIN + Math.random() * SHOT_GAP_RAND;
+          else this.shotGap = SHOT_GAP_MIN + diff().gap + Math.random() * SHOT_GAP_RAND;
           this.stopTimer = STOP_TO_SHOOT;
           this.shootAnim = 0.3;
         }
@@ -705,7 +713,7 @@ export class Bot extends Character {
       this.hopTimer -= dt;
       if (this.hopTimer <= 0 && this.onGround) {
         input.jump = true;
-        this.hopTimer = 1.2 + Math.random() * 2.5;
+        this.hopTimer = (1.2 + Math.random() * 2.5) / diff().hop;
       }
       if (this.crouchHold <= 0 && Math.random() < 0.15 * dt) this.crouchHold = 0.5 + Math.random() * 0.6;
     } else {
@@ -824,6 +832,10 @@ export class Bot extends Character {
   }
 
   update(dt) {
+    // Difficulty: how fast they move and how hard they hit
+    const d = diff();
+    this.speedMult = d.speed;
+    this.damageMult = d.damage;
     this.preUpdate(dt);
     this.gun.update(dt);
     this.shootAnim = Math.max(0, this.shootAnim - dt);
