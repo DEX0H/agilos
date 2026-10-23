@@ -135,7 +135,20 @@ export class Firearm {
     // Left hand cradling a handguard from below: palm up against it, fingers across to the
     // far side and wrapped up around it, thumb along the near side. The hand's own finger
     // and palm directions are measured from the mirrored grip, then turned to point there.
-    if (A.left.cradle) {
+    if (A.left.cradle && A.left.cradle.frame === 'hand') {
+      // Placed through the arm's own hand frame (finger direction f, palm normal n): the
+      // palm centre sits at `at`, a palm's depth under it
+      const C = A.left.cradle;
+      const f = new THREE.Vector3(...C.f).normalize();
+      const n = new THREE.Vector3(...C.n).normalize();
+      // The arm's palm normal for the left hand points out of the back of the hand (its
+      // fingers curl the other way), so the frame is built with it reversed
+      e.tL.quaternion.copy(basisQuat(f, n.clone().negate()));
+      const nn = n.clone().addScaledVector(f, -n.dot(f)).normalize();
+      e.tL.position.set(...C.at).addScaledVector(f, -(C.reach ?? 0.055) * k).addScaledVector(nn, -(C.depth ?? 0.028) * k);
+      e.tL.userData.direct = false;
+      e.leftSupport = { pos: e.tL.position.clone(), quat: e.tL.quaternion.clone() };
+    } else if (A.left.cradle) {
       const C = A.left.cradle;
       const m = P.mirrored;
       const toGrip = m.pos.clone().negate();                       // hand -> grip, gun frame
@@ -180,7 +193,7 @@ export class Firearm {
     let leftCurl = blendCurl(CURLS[A.left.curl], CURLS.mag, reloading ? this.leftOnMag : 0);
     if (ARMS.pose && A.left.fromPose) leftCurl = hand;
     else if (ARMS.pose && A.left.mirror && !(reloading && this.leftOnMag > 0.5)) leftCurl = { pose: A.left.mirror.wrapIndex ? ARMS.pose.mirrorWrap : ARMS.pose.mirrorFingers };
-    else if (ARMS.pose && A.left.cradle && !(reloading && this.leftOnMag > 0.5)) leftCurl = { pose: ARMS.pose.mirrorWrap };
+    else if (ARMS.pose && A.left.cradle && !(reloading && this.leftOnMag > 0.5)) leftCurl = { pose: ARMS.pose.partialWrap(A.left.cradle.wrap ?? 1, A.left.cradle.thumb ?? A.left.cradle.wrap ?? 1) };
     return {
       right: { target: e.tR, shoulder: _vec(A.right.shoulder, _s1), pole: _vec(A.right.pole, _p1), curl: hand || CURLS[A.right.curl] },
       left: { target: e.tL, shoulder: _vec(A.left.shoulder, _s2), pole: _vec(A.left.pole, _p2), curl: leftCurl },
