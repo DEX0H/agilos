@@ -44,7 +44,40 @@ function buildPose(gltf, clips) {
   };
   const fingers = new Map();
   model.traverse((o) => { if (o.isBone && /^(index|middle|ring|pinky|thumb)_0[123]_[lr]$/.test(o.name)) fingers.set(o.name, o.quaternion.clone()); });
-  return { right: rel(handR), left: rel(model.getObjectByName('hand_l')), fingers };
+
+  // The same grip for the LEFT hand, as an exact mirror image of the right hand's (across
+  // the character's centre plane, which is also the gun's). Left and right bones don't
+  // share axes, so each bone gets a correction measured in the bind pose:
+  //   leftWorld = mirror(rightWorld) * C,  C = mirror(rightBindWorld)^-1 * leftBindWorld
+  const bind = SkeletonUtils.clone(gltf.scene);
+  bind.scale.copy(model.scale);
+  bind.updateMatrixWorld(true);
+  const mirrorQ = (q) => new THREE.Quaternion(q.x, -q.y, -q.z, q.w);
+  const wq = (root, name) => root.getObjectByName(name).getWorldQuaternion(new THREE.Quaternion());
+  const leftWorld = (base) => {
+    const c = mirrorQ(wq(bind, `${base}_r`)).invert().multiply(wq(bind, `${base}_l`));
+    return mirrorQ(wq(model, `${base}_r`)).multiply(c);
+  };
+  const handLW = leftWorld('hand');
+  const mirrorFingers = new Map();
+  for (const f of ['index', 'middle', 'ring', 'pinky', 'thumb']) {
+    let parentW = handLW;
+    for (const k of [1, 2, 3]) {
+      const w = leftWorld(`${f}_0${k}`);
+      mirrorFingers.set(`${f}_0${k}_l`, parentW.clone().invert().multiply(w));
+      parentW = w;
+    }
+  }
+  const right = rel(handR);
+  // In the gun frame: mirrored position, and the left hand's world rotation brought into it
+  const mirrored = {
+    pos: new THREE.Vector3(-right.pos.x, right.pos.y, right.pos.z),
+    quat: gq.clone().invert().multiply(handLW),
+  };
+  // Same, with the index finger wrapped like the middle one (no trigger on a fore grip)
+  const mirrorWrap = new Map(mirrorFingers);
+  for (const k of [1, 2, 3]) mirrorWrap.set(`index_0${k}_l`, mirrorFingers.get(`middle_0${k}_l`).clone());
+  return { right, left: rel(model.getObjectByName('hand_l')), fingers, mirrored, mirrorFingers, mirrorWrap };
 }
 const FINGERS = ['index', 'middle', 'ring', 'pinky'];
 const _v1 = new THREE.Vector3();
@@ -272,6 +305,22 @@ export class FPArms {
       this.right = new Arm(g, 'r', this.group);
       this.left = new Arm(g, 'l', this.group);
       ARMS.pose = buildPose(g, clips);
+      // Each finger joint bends about the axis the animator used: take it from the pose
+      // (bind -> pose rotation), for both hands. Straight-finger rest poses carry no hint
+      // of which side the palm is on, so guessing it had the left hand curling backwards.
+      if (ARMS.pose) {
+        for (const arm of [this.right, this.left]) {
+          for (const bn of [...arm.fingers.flat(), ...arm.thumb]) {
+            const pq = ARMS.pose.fingers.get(bn.name);
+            if (!pq) continue;
+            const d = arm.bind.get(bn).clone().invert().multiply(pq);
+            if (d.w < 0) { d.x = -d.x; d.y = -d.y; d.z = -d.z; d.w = -d.w; }
+            const ang = 2 * Math.acos(Math.min(1, d.w));
+            if (ang < 0.08) continue;
+            arm.curlAxes.set(bn, new THREE.Vector3(d.x, d.y, d.z).normalize());
+          }
+        }
+      }
     }).catch((e) => console.warn('First-person arms failed to load', e));
   }
 
