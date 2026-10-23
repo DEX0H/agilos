@@ -300,10 +300,13 @@ setQuality((() => { try { return localStorage.getItem(QUALITY_KEY) === 'high' ? 
 document.addEventListener('keydown', (e) => {
   if (capture.action) return; // a key is being rebound
   const b = settings.binds;
-  if (e.code === b.weapon1) setWeapon(weapon);
-  if (e.code === b.weapon2) setWeapon(knife);
-  if (e.code === b.flip && !e.repeat) knife.flip();
-  if (e.code === b.interact && !e.repeat) useBox();
+  // Dead: spectator mode, none of the in-game actions
+  if (!player.dead) {
+    if (e.code === b.weapon1) setWeapon(weapon);
+    if (e.code === b.weapon2) setWeapon(knife);
+    if (e.code === b.flip && !e.repeat) knife.flip();
+    if (e.code === b.interact && !e.repeat) useBox();
+  }
   if (e.code === b.quality && !e.repeat) {
     setQuality(quality === 'high' ? 'fast' : 'high');
     showToast(quality === 'high' ? 'QUALITY: HIGH (ambient occlusion)' : 'QUALITY: FAST');
@@ -341,13 +344,18 @@ document.addEventListener('agilos:lockfailed', showLockFailed);
 // Holding it keeps automatic weapons firing (see the frame loop). Right click scopes.
 document.addEventListener('mousedown', (e) => {
   if (!player.locked) return;
-  if (e.button === 2) {
-    if (active === weapon) weapon.scopeHeld = true;
+  // Match over: a click plays again
+  if (match.state === 'over' && e.button === 0) {
+    restartMatch();
     return;
   }
-  // Dead or match over: a click plays again (once the card has had a moment)
-  if (e.button === 0 && (player.dead || match.state === 'over') && (deathCam.t > 1 || match.state === 'over')) {
-    restartMatch();
+  // Dead: spectator mode. Left / right click switch between the players still alive.
+  if (player.dead) {
+    if (deathCam.t > 0.5 && (e.button === 0 || e.button === 2)) deathCam.cycle(spectatable(), e.button === 0 ? 1 : -1);
+    return;
+  }
+  if (e.button === 2) {
+    if (active === weapon) weapon.scopeHeld = true;
     return;
   }
   if (e.button !== 0 || player.frozen) return;
@@ -369,6 +377,9 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   postfx.resize(window.innerWidth, window.innerHeight);
 });
+
+// Who can be watched while dead: everyone still alive
+const spectatable = () => world.combatants.filter((c) => c !== player && !c.dead);
 
 // How the player went down, for the elimination card
 let deathInfo = null;
@@ -615,7 +626,11 @@ function updateDeathCard() {
   }
   // Rebuilt only when what it says changes (the match ending while you spectate)
   const alive = match.aliveCount();
-  const key = `${won}|${match.state}|${alive}|${savedNote}`;
+  const watching = deathCam.watch && !deathCam.watch.dead ? deathCam.watch.name : '';
+  // Spectating: the card shrinks to its bottom line after a few seconds (or on switching)
+  const compact = !won && player.dead && match.state !== 'over' && (deathCam.t > 6 || deathCam.switched);
+  deathCard.classList.toggle('compact', compact);
+  const key = `${won}|${match.state}|${alive}|${savedNote}|${watching}`;
   if (key === cardKey) return true;
   const fresh = !cardKey;
   cardKey = key;
@@ -652,15 +667,16 @@ function updateDeathCard() {
     deathCard.className = `show${won ? ' win' : ''}`;
   }
   foot.textContent = '';
-  const kbd = document.createElement('kbd');
-  kbd.textContent = 'CLICK';
-  foot.append(kbd, 'OR ');
-  const kbd2 = document.createElement('kbd');
-  kbd2.textContent = 'ENTER';
-  foot.append(kbd2, 'PLAY AGAIN');
+  const key2 = (k, label) => {
+    const el = document.createElement('kbd');
+    el.textContent = k;
+    foot.append(el, label);
+  };
+  if (match.state === 'over') { key2('CLICK', 'OR '); key2('ENTER', 'PLAY AGAIN'); }
+  else { key2('CLICK', 'SWITCH PLAYER   '); key2('ENTER', 'PLAY AGAIN'); }
   const note = document.createElement('small');
   if (match.state === 'over' && !won) note.textContent = match.winner ? `${match.winner.name} won the match` : 'Nobody survived';
-  else if (!won) note.textContent = `${alive} still fighting · watching ${deathInfo && deathInfo.killer && !deathInfo.killer.dead ? deathInfo.killer.name : 'the arena'}`;
+  else if (!won) note.textContent = `SPECTATING  ·  ${alive} still fighting · watching ${watching || 'the arena'}`;
   if (savedNote) note.textContent = note.textContent ? `${note.textContent}  ·  ${savedNote}` : savedNote;
   if (note.textContent) foot.append(note);
   return true;
@@ -748,6 +764,12 @@ function frame(now) {
   player.update(dt);
   // Dead or dropping in: the death / intro camera takes over from the eyes
   if (player.dead && !deathCam.active) deathCam.start(player.lastAttacker);
+  // The player you're watching went down: move on to whoever is still fighting
+  if (player.dead && deathCam.watch && deathCam.watch.dead && deathCam.t > 2) {
+    const alive = spectatable();
+    const k = deathCam.watch.lastAttacker;
+    if (k && !k.dead && k !== player) { deathCam.watch = k; deathCam.switched = true; } else deathCam.cycle(alive, 1);
+  }
   deathCam.update(dt);
   // Knife out (guns away): a little faster, like Apex's holstered speed
   player.speedMult = active === knife ? 1.13 : 1;
@@ -796,7 +818,7 @@ function frame(now) {
   // Scope overlay replaces the crosshair while zoomed in
   const scoped = active === weapon && weapon.scoped;
   css(scope, 'opacity', scoped ? '1' : '0');
-  css(crosshair, 'visibility', scoped ? 'hidden' : 'visible');
+  css(crosshair, 'visibility', scoped || player.dead ? 'hidden' : 'visible');
   // Aiming down sights: the sights are the crosshair
   css(crosshair, 'opacity', active === weapon ? (1 - weapon.aim).toFixed(2) : '1');
 

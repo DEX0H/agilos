@@ -52,7 +52,7 @@ export class Player extends Character {
     // Mouse look is applied the moment the event arrives. pointerrawupdate (Chrome/Edge)
     // fires at the mouse's own polling rate instead of once per frame.
     const look = (e) => {
-      if (!this.locked) return;
+      if (!this.locked || this.dead) return; // dead: spectating, the body doesn't turn
       const s = radPerCount() * this.sensScale;
       this.yaw -= e.movementX * s;
       this.pitch -= e.movementY * s;
