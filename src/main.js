@@ -30,6 +30,7 @@ import { createPostFx } from './postfx.js';
 import { createDust } from './dust.js';
 import { DeathCam } from './deathcam.js';
 import { FPArms } from './fparms.js';
+import { Sound } from './audio.js';
 import { mergeStatic } from './merge.js';
 
 // Low-latency canvas: `desynchronized` lets the browser present frames without
@@ -119,6 +120,7 @@ const match = new Match(scene, world, player, bots, [arena.playerSpawn, ...arena
 const pickups = new HealthPickups(scene, world);
 bots.setPickups(pickups);
 pickups.onPickup = (c, it) => {
+  if (c === player) sound.heal();
   if (c === player) showToast(`+${KINDS[it.kind].heal} HP  ·  ${KINDS[it.kind].label}`, '#7dff9a', 1.6);
 };
 
@@ -141,6 +143,16 @@ onBotsChange((n) => { if (match.state === 'warmup') bots.setCount(n); });
 const weapon = new Firearm(camera, scene, player);
 const knife = new Knife(camera, scene, player);
 const arms = new FPArms(camera);
+
+// Sound: starts on the first click or key press (browsers need a gesture for audio)
+const sound = new Sound();
+const unlockSound = () => {
+  sound.world = world;
+  sound.player = player;
+  sound.unlock();
+};
+document.addEventListener('mousedown', unlockSound, true);
+document.addEventListener('keydown', unlockSound, true);
 // Every spawn (including a new match) starts with a fresh handgun; box weapons are lost
 player.onRespawn = () => { weapon.equip(HANDGUN); setWeapon(weapon); };
 let active = weapon;
@@ -328,6 +340,7 @@ document.addEventListener('pointerlockchange', () => {
   if (locked) lockMsg.style.display = 'none';
   // First time you click in, the match begins; after dying or a finished match, clicking
   // back in starts a new one
+  sound.setMusic(locked);
   if (locked && match.state === 'warmup') startMatch();
   else if (locked && (match.state === 'over' || player.dead)) restartMatch();
   if (!locked) weapon.release();
@@ -363,7 +376,7 @@ document.addEventListener('mousedown', (e) => {
   player.syncAim();
   const r = active.fire(world);
   stats.shot(r);
-  if (r.hit) hitmarkerTimer = 0.15;
+  if (r.hit) { hitmarkerTimer = 0.15; sound.hit(r.headshot); }
 });
 document.addEventListener('mouseup', (e) => {
   if (e.button === 0) weapon.triggerHeld = false;
@@ -398,6 +411,7 @@ world.onKill((killer, victim, how) => {
 
 // Kill feed, newest on top, each line fades after a few seconds
 world.onKill((killer, victim, how) => {
+  if (killer === player && victim !== player) sound.kill();
   const line = document.createElement('div');
   line.className = 'feed-line';
   const k = killer ? killer.name : 'World';
@@ -427,7 +441,7 @@ initProfile().catch((e) => console.warn('Profiles unavailable', e));
 const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 if (DEBUG) window.agilos = {
   player, weapon, knife, setWeapon, world, bots, match, boxes, renderer, scene, postfx, useBox, stats, account,
-  get nav() { return nav; }, get arena() { return arena; }, buildMap, useMap, colliders, pickups, arms,
+  get nav() { return nav; }, get arena() { return arena; }, buildMap, useMap, colliders, pickups, arms, sound,
   deathCam, startMatch, restartMatch,
   get kills() { return player.kills; },
 };
@@ -781,7 +795,7 @@ function frame(now) {
     player.syncAim();
     const r = weapon.fire(world);
     stats.shot(r);
-    if (r.hit) hitmarkerTimer = 0.15;
+    if (r.hit) { hitmarkerTimer = 0.15; sound.hit(r.headshot); }
   }
   weapon.update(dt);
   knife.update(dt);
@@ -799,6 +813,7 @@ function frame(now) {
 
   sky.position.copy(camera.position);
   dust.update(t, camera.position);
+  sound.update(camera, player);
   // The sun's shadow box follows the camera (snapped to whole shadow texels, so edges
   // don't shimmer as you move); a 190 m map keeps the same shadow sharpness as a 60 m one
   const texel = 80 / 2048;
