@@ -89,28 +89,84 @@ async function render(seconds, build, channels = 1) {
 }
 
 // ---------- Gunshots ----------
-// crack: supersonic snap; body: the bang; thump: chest punch; tail: rolling report;
-// echo: slapbacks off the buildings; mech: the gun's own action
+// Built like a real shot is heard: the muzzle blast is an N-shaped pressure wave lasting
+// a couple of milliseconds (a sharp crack, not hiss), followed by the low boom of the
+// expanding gas, the gun's own action, and the street answering: early reflections off
+// the ground and nearby walls, then a diffuse rolling tail (a convolution reverb).
+//   nwave: blast length (ms) and brightness (lowpass Hz)
+//   boom: low thump [from Hz, to Hz, level, decay]
+//   body: mid "bang" [band Hz, level, decay]
+//   room: [early reflection times (s)], tail length (s), tail level, tail brightness (Hz)
 const GUNS = {
-  handgun: { crack: [2200, 0.9, 0.022], body: [750, 0.9, 0.09], thump: [115, 48, 0.8, 0.1], tail: [1300, 0.32, 0.45], echo: [0.07, 0.15], mech: 0.35, drive: 3, len: 0.9 },
-  smg: { crack: [2800, 0.75, 0.016], body: [950, 0.85, 0.06], thump: [95, 50, 0.55, 0.07], tail: [1500, 0.25, 0.3], echo: [0.06], mech: 0.45, drive: 2.5, len: 0.6 },
-  rifle: { crack: [1900, 1, 0.03], body: [560, 1, 0.12], thump: [135, 42, 1, 0.14], tail: [950, 0.4, 0.75], echo: [0.08, 0.17, 0.3], mech: 0.3, drive: 3.5, len: 1.2 },
-  sniper: { crack: [1600, 1, 0.042], body: [420, 1, 0.18], thump: [150, 34, 1, 0.26], tail: [720, 0.5, 1.7], echo: [0.11, 0.24, 0.42, 0.65], mech: 0.2, drive: 4, len: 2.4 },
+  handgun: { nwave: [1.6, 7000], boom: [140, 55, 0.7, 0.09], body: [900, 0.45, 0.05], room: [[0.011, 0.019, 0.034], 0.55, 0.32, 2400], mech: 0.3, drive: 2.2, len: 1 },
+  smg: { nwave: [1.2, 8000], boom: [120, 60, 0.45, 0.06], body: [1100, 0.4, 0.035], room: [[0.009, 0.016, 0.028], 0.4, 0.26, 2600], mech: 0.4, drive: 2, len: 0.75 },
+  rifle: { nwave: [2.2, 6500], boom: [125, 45, 0.9, 0.13], body: [700, 0.5, 0.07], room: [[0.013, 0.024, 0.041, 0.07], 0.9, 0.38, 2000], mech: 0.25, drive: 2.6, len: 1.4 },
+  sniper: { nwave: [3.2, 5500], boom: [110, 34, 1, 0.22], body: [520, 0.55, 0.11], room: [[0.016, 0.03, 0.055, 0.11, 0.2], 2.1, 0.45, 1500], mech: 0.18, drive: 3, len: 2.6 },
 };
+
+// One N-wave pressure pulse, as a buffer
+function nwaveBuffer(ctx, ms) {
+  const n = Math.max(8, Math.round((ms / 1000) * ctx.sampleRate));
+  const b = ctx.createBuffer(1, n * 3, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  // Instant rise, linear fall through zero to an equal negative peak, then back
+  for (let i = 0; i < n; i++) d[i] = 1 - (2 * i) / n;
+  for (let i = 0; i < n; i++) d[n + i] = -1 + i / n;
+  return b;
+}
+
+// Impulse response of a city street: discrete early reflections, then a decaying diffuse
+// tail that loses its highs as it goes
+function streetIR(ctx, early, len, bright) {
+  const n = Math.ceil(len * ctx.sampleRate);
+  const b = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c);
+    let lp = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / ctx.sampleRate;
+      const k = Math.exp((-6.9 * t) / len);           // -60 dB over `len`
+      const a = Math.exp(-t * (8000 / bright));        // highs die first
+      lp += ((Math.random() * 2 - 1) - lp) * Math.min(1, 0.15 + 0.85 * a);
+      d[i] = lp * k * 0.35;
+    }
+    for (const [j, e] of early.entries()) {
+      const i = Math.floor((e + (c ? 0.0015 * (j + 1) : 0)) * ctx.sampleRate);
+      if (i < n) d[i] += 0.8 / (j + 1.2);
+    }
+  }
+  return b;
+}
+
 function gunshot(name) {
   const p = GUNS[name];
   return render(p.len, (ctx, out) => {
-    const bus = ctx.createGain();
+    const dry = ctx.createGain();
     const sat = saturator(ctx, p.drive);
-    bus.connect(sat).connect(out);
-    noise(ctx, bus, { type: 'highpass', freq: jit(p.crack[0]), peak: p.crack[1], attack: 0.0004, decay: jit(p.crack[2]) });
-    noise(ctx, bus, { type: 'bandpass', freq: jit(p.body[0]), q: 0.7, peak: p.body[1], attack: 0.001, decay: jit(p.body[2]) });
-    tone(ctx, bus, { freq: jit(p.thump[0]), to: p.thump[1], peak: p.thump[2], attack: 0.002, decay: jit(p.thump[3]) });
-    noise(ctx, bus, { type: 'lowpass', freq: jit(p.tail[0]), q: 0.5, t: 0.004, peak: p.tail[1], attack: 0.01, decay: jit(p.tail[2], 0.12) });
-    p.echo.forEach((d, i) => noise(ctx, bus, {
-      type: 'lowpass', freq: jit(p.tail[0] * 0.8), q: 0.4, t: jit(d, 0.15), peak: p.tail[1] * 0.45 / (i + 1), attack: 0.004, decay: jit(0.14 + i * 0.05),
-    }));
-    noise(ctx, out, { type: 'highpass', freq: 5000, peak: p.mech, attack: 0.0004, decay: 0.006 });
+    dry.connect(sat).connect(out);
+    const verb = ctx.createConvolver();
+    verb.normalize = true;
+    verb.buffer = streetIR(ctx, p.room[0].map((e) => jit(e, 0.15)), jit(p.room[1], 0.1), p.room[3]);
+    const wet = ctx.createGain();
+    wet.gain.value = p.room[2];
+    dry.connect(verb).connect(wet).connect(out);
+
+    // Muzzle blast
+    const blast = ctx.createBufferSource();
+    blast.buffer = nwaveBuffer(ctx, jit(p.nwave[0], 0.1));
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = jit(p.nwave[1], 0.1);
+    const bg = ctx.createGain();
+    bg.gain.value = 1;
+    blast.connect(lp).connect(bg).connect(dry);
+    blast.start(0);
+    // Gas boom and body
+    tone(ctx, dry, { freq: jit(p.boom[0]), to: p.boom[1], peak: p.boom[2], attack: 0.001, decay: jit(p.boom[3]) });
+    noise(ctx, dry, { type: 'bandpass', freq: jit(p.body[0]), q: 0.9, peak: p.body[1], attack: 0.0008, decay: jit(p.body[2]) });
+    // The action cycling, right in your hands
+    noise(ctx, out, { type: 'bandpass', freq: 3200, q: 2, t: 0.004, peak: p.mech, attack: 0.0004, decay: 0.012 });
+    noise(ctx, out, { type: 'bandpass', freq: 2400, q: 2, t: 0.03, peak: p.mech * 0.6, attack: 0.0004, decay: 0.01 });
   });
 }
 
@@ -130,11 +186,13 @@ const MECH = {
 
 // ---------- Body and feet ----------
 const BODY = {
+  // A boot on concrete: muffled heel thud, then the sole rolling down (a short slap),
+  // with a little grit underfoot
   step: (ctx, out) => {
-    noise(ctx, out, { type: 'bandpass', freq: jit(1100, 0.2), q: 1, peak: 0.55, attack: 0.002, decay: jit(0.035) });
-    tone(ctx, out, { freq: jit(85), to: 55, peak: 0.6, attack: 0.002, decay: 0.05 });
-    noise(ctx, out, { type: 'bandpass', freq: jit(2300, 0.2), q: 1, t: jit(0.035, 0.3), peak: 0.35, attack: 0.001, decay: 0.025 });
-    noise(ctx, out, { type: 'highpass', freq: 4500, t: 0.01, peak: 0.08, attack: 0.005, decay: 0.06 }); // grit
+    noise(ctx, out, { type: 'lowpass', freq: jit(420, 0.2), q: 0.7, peak: 0.9, attack: 0.002, decay: jit(0.045) });
+    noise(ctx, out, { type: 'bandpass', freq: jit(1400, 0.25), q: 0.8, t: 0.004, peak: 0.4, attack: 0.001, decay: jit(0.022) });
+    noise(ctx, out, { type: 'bandpass', freq: jit(2600, 0.25), q: 1.2, t: jit(0.045, 0.35), peak: 0.22, attack: 0.002, decay: 0.03 });
+    noise(ctx, out, { type: 'highpass', freq: 5000, t: 0.02, peak: 0.05, attack: 0.01, decay: 0.07 });
   },
   land: (ctx, out) => {
     tone(ctx, out, { freq: 75, to: 38, peak: 1, attack: 0.002, decay: 0.16 });
@@ -386,7 +444,7 @@ export class Sound {
       if (this.slideSrc) {
         const hs = Math.hypot(player.velocity.x, player.velocity.z);
         const t = this.ctx.currentTime;
-        this.slideSrc.g.gain.setTargetAtTime(sliding ? Math.min(0.5, hs / 22) : 0, t, sliding ? 0.03 : 0.08);
+        this.slideSrc.g.gain.setTargetAtTime(sliding ? Math.min(0.28, hs / 40) : 0, t, sliding ? 0.03 : 0.08);
         this.slideSrc.f.frequency.setTargetAtTime(700 + hs * 70, t, 0.05);
         if (!sliding) {
           const old = this.slideSrc;
@@ -420,23 +478,23 @@ export class Sound {
     on('slash', (owner) => { if (me(owner)) this.play('whoosh', { gain: 0.45 }); });
     on('step', (c, hs, crouch) => {
       const g = (crouch ? 0.35 : hs > 8.5 ? 1 : 0.7);
-      if (me(c)) this.play('step', { gain: 0.32 * g, rate: crouch ? 0.9 : 1 });
+      if (me(c)) this.play('step', { gain: 0.09 * g, rate: crouch ? 0.9 : 1 });
       // Enemy footsteps: audible and placeable, but not loud; out of earshot past ~32 m
       else if (!c.dead) this.play('step', { pos: c.position, gain: 0.55 * g, ref: 2.5, maxDist: 32, cheap: true });
     });
     on('jump', (c, kind) => {
       const name = kind === 'wall' ? 'wall' : kind === 'mantle' ? 'mantle' : kind === 'double' ? 'double' : 'jump';
-      if (me(c)) this.play(name, { gain: 0.45 });
+      if (me(c)) this.play(name, { gain: 0.22 });
       else this.play(name, { pos: c.position, gain: 0.4, ref: 2.5, maxDist: 28, cheap: true });
     });
     on('land', (c, fall) => {
       if (fall < 4) return;
       const g = Math.min(1, 0.3 + fall / 20);
-      if (me(c)) this.play('land', { gain: 0.6 * g });
+      if (me(c)) this.play('land', { gain: 0.3 * g });
       else this.play('land', { pos: c.position, gain: 0.5 * g, ref: 2.5, maxDist: 30, cheap: true });
     });
     on('slide', (c) => {
-      if (me(c)) this.play('slideStart', { gain: 0.4 });
+      if (me(c)) this.play('slideStart', { gain: 0.25 });
       else this.play('slideStart', { pos: c.position, gain: 0.35, ref: 2.5, maxDist: 25, cheap: true });
     });
     on('hurt', (c, dealt) => { if (me(c) && dealt > 0) this.play('hurt', { gain: 0.5 }); });

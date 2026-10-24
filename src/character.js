@@ -51,7 +51,8 @@ const SLIDE_FRICTION_EARLY = 0.35;
 const SLIDE_FRICTION = 2.2;
 const SLIDE_END_SPEED = 2.5;
 const SLIDE_MAX_TIME = 2.2;
-const SLIDE_COOLDOWN = 0.2;
+const SLIDE_COOLDOWN = 0.35;        // after a slide ends
+const SLIDE_REARM = 1.3;            // minimum time from one slide's start to the next: no spamming
 const SLIDE_JUMP_BOOST = 1.12;
 
 // Wall jump and wall slide
@@ -226,6 +227,7 @@ export class Character {
   startSlide(hs) {
     emit('slide', this, hs);
     this.sliding = true;
+    this.slideRearm = SLIDE_REARM;
     this.slideTime = 0;
     // Sprint-slides get a boost; chaining slides (slide hopping) keeps speed but no more boost
     if (this.slideBoostCooldown <= 0 && hs < SLIDE_START_SPEED) {
@@ -255,6 +257,7 @@ export class Character {
     this.gatherNear(dt);
     this.simTime += dt;
     this.slideCooldown = Math.max(0, this.slideCooldown - dt);
+    this.slideRearm = Math.max(0, (this.slideRearm || 0) - dt);
     this.slideBoostCooldown = Math.max(0, this.slideBoostCooldown - dt);
     this.wallCooldown = Math.max(0, this.wallCooldown - dt);
     this.wallTimer = Math.max(0, this.wallTimer - dt);
@@ -289,7 +292,7 @@ export class Character {
     const vel = this.velocity;
     let hs = Math.hypot(vel.x, vel.z);
     // Slide: crouch while moving fast on the ground (aiming doesn't prevent it)
-    if (input.crouch && this.onGround && !this.sliding && this.slideCooldown <= 0 && hs >= SLIDE_MIN_SPEED) {
+    if (input.crouch && this.onGround && !this.sliding && this.slideCooldown <= 0 && !(this.slideRearm > 0) && hs >= SLIDE_MIN_SPEED) {
       this.startSlide(hs);
       hs = Math.hypot(vel.x, vel.z);
     }
