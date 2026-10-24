@@ -221,8 +221,22 @@ const BODY = {
   },
 };
 const UI = {
-  hit: (ctx, out) => { tone(ctx, out, { freq: 2100, peak: 0.6, decay: 0.035 }); tone(ctx, out, { freq: 3150, peak: 0.25, decay: 0.025 }); },
-  headshot: (ctx, out) => { tone(ctx, out, { freq: 2600, peak: 0.7, decay: 0.22 }); tone(ctx, out, { freq: 3900, peak: 0.4, decay: 0.15 }); tone(ctx, out, { freq: 5300, peak: 0.15, decay: 0.08 }); },
+  // Body hit: a crisp, punchy marker that cuts through gunfire: a tight bright click,
+  // a short tonal blip on top and a soft thwack of the impact underneath
+  hit: (ctx, out) => {
+    noise(ctx, out, { type: 'bandpass', freq: jit(3600, 0.05), q: 1.6, peak: 0.9, attack: 0.0005, decay: 0.008 });
+    tone(ctx, out, { type: 'triangle', freq: jit(1650, 0.03), to: 1450, peak: 0.55, attack: 0.001, decay: 0.045 });
+    noise(ctx, out, { type: 'lowpass', freq: 700, peak: 0.55, attack: 0.001, decay: 0.035 });
+  },
+  // Headshot: unmistakably different: a crunchy snap, then a bright metallic "ding" (a
+  // helmet ring, inharmonic partials) that hangs for a moment
+  headshot: (ctx, out) => {
+    noise(ctx, out, { type: 'bandpass', freq: jit(2200, 0.05), q: 0.9, peak: 0.9, attack: 0.0005, decay: 0.018 });
+    noise(ctx, out, { type: 'lowpass', freq: 900, peak: 0.6, attack: 0.001, decay: 0.05 });
+    for (const [f, a, d] of [[1880, 0.6, 0.42], [2710, 0.45, 0.32], [4150, 0.3, 0.22], [5820, 0.18, 0.14]]) {
+      tone(ctx, out, { freq: jit(f, 0.01), peak: a, t: 0.006, attack: 0.001, decay: d });
+    }
+  },
   kill: (ctx, out) => { tone(ctx, out, { type: 'triangle', freq: 660, peak: 0.6, decay: 0.12 }); tone(ctx, out, { type: 'triangle', freq: 990, t: 0.07, peak: 0.6, decay: 0.18 }); },
   heal: (ctx, out) => { tone(ctx, out, { freq: 620, to: 880, peak: 0.5, attack: 0.01, decay: 0.25 }); tone(ctx, out, { freq: 1240, t: 0.08, peak: 0.25, decay: 0.25 }); },
 };
@@ -310,7 +324,7 @@ export class Sound {
     for (const name of Object.keys(GUNS)) b[`shot_${name}`] = await many(() => gunshot(name));
     for (const [k, fn] of Object.entries(MECH)) b[k] = await many(() => render(k === 'bolt' ? 0.6 : 0.25, fn));
     for (const [k, fn] of Object.entries(BODY)) b[k] = await many(() => render(k === 'land' ? 0.3 : 0.4, fn));
-    for (const [k, fn] of Object.entries(UI)) b[k] = [await render(0.4, fn)];
+    for (const [k, fn] of Object.entries(UI)) b[k] = k === 'hit' || k === 'headshot' ? await many(() => render(0.5, fn)) : [await render(0.4, fn)];
     b.slideLoop = slideLoop();
     this.ready = true;
     this.listen();
@@ -501,7 +515,8 @@ export class Sound {
   }
 
   // Feedback for your own hits (called from the game)
-  hit(headshot) { this.play(headshot ? 'headshot' : 'hit', { gain: headshot ? 0.35 : 0.3 }); }
+  // A few hundredths of a second after the shot, so the gun's crack doesn't mask it
+  hit(headshot) { this.play(headshot ? 'headshot' : 'hit', { gain: headshot ? 0.55 : 0.45, delay: 0.035 }); }
   kill() { this.play('kill', { gain: 0.35, delay: 0.05 }); }
   heal() { this.play('heal', { gain: 0.4 }); }
 }
