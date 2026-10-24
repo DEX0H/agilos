@@ -241,6 +241,35 @@ const UI = {
   heal: (ctx, out) => { tone(ctx, out, { freq: 620, to: 880, peak: 0.5, attack: 0.01, decay: 0.25 }); tone(ctx, out, { freq: 1240, t: 0.08, peak: 0.25, decay: 0.25 }); },
 };
 
+// ---------- Mystery box: a casino slot reel ----------
+const BOX = {
+  // The reel whirring up and winding down over the 1.1 s spin
+  reel: (ctx, out) => {
+    noise(ctx, out, { type: 'bandpass', freq: [700, 1600], q: 2.5, peak: 0.35, attack: 0.25, decay: 0.9 });
+    tone(ctx, out, { type: 'sawtooth', freq: 55, to: 38, peak: 0.12, attack: 0.2, decay: 0.95 });
+  },
+  // One peg flicking past the pointer
+  tick: (ctx, out) => {
+    noise(ctx, out, { type: 'bandpass', freq: jit(2800, 0.08), q: 3, peak: 0.8, attack: 0.0004, decay: 0.012 });
+    tone(ctx, out, { type: 'triangle', freq: jit(1250, 0.05), peak: 0.35, attack: 0.0005, decay: 0.025 });
+  },
+  // Wins by rarity: a bell ding, a two-note chime, a jackpot run with coins
+  winCommon: (ctx, out) => bell(ctx, out, 1320, 0, 0.8, 0.7),
+  winRare: (ctx, out) => { bell(ctx, out, 1047, 0, 0.75, 0.6); bell(ctx, out, 1568, 0.12, 0.85, 0.9); },
+  winLegendary: (ctx, out) => {
+    [1047, 1319, 1568, 2093].forEach((f, i) => bell(ctx, out, f, i * 0.08, 0.7, 0.5));
+    bell(ctx, out, 2093, 0.34, 0.9, 1.3);
+    bell(ctx, out, 2637, 0.34, 0.5, 1.1);
+    for (let i = 0; i < 14; i++) noise(ctx, out, { type: 'bandpass', freq: jit(5200, 0.25), q: 6, t: 0.35 + i * 0.06 + Math.random() * 0.03, peak: 0.25, attack: 0.001, decay: 0.05 });
+  },
+};
+// A small bright bell: a few inharmonic partials that ring out
+function bell(ctx, out, f, t, peak, decay) {
+  for (const [r, a] of [[1, 1], [2.76, 0.4], [5.4, 0.18], [8.93, 0.08]]) {
+    tone(ctx, out, { freq: f * r, t, peak: peak * a, attack: 0.002, decay: decay / Math.sqrt(r) });
+  }
+}
+
 // Looping slide scrape: gritty band-limited noise with a grainy wobble (seamless loop)
 function slideLoop() {
   const n = RATE;
@@ -324,6 +353,7 @@ export class Sound {
     for (const name of Object.keys(GUNS)) b[`shot_${name}`] = await many(() => gunshot(name));
     for (const [k, fn] of Object.entries(MECH)) b[k] = await many(() => render(k === 'bolt' ? 0.6 : 0.25, fn));
     for (const [k, fn] of Object.entries(BODY)) b[k] = await many(() => render(k === 'land' ? 0.3 : 0.4, fn));
+    for (const [k, fn] of Object.entries(BOX)) b[`box_${k}`] = k === 'tick' ? await many(() => render(0.1, fn)) : [await render(k === 'winLegendary' ? 1.8 : 1.3, fn)];
     for (const [k, fn] of Object.entries(UI)) b[k] = k === 'hit' || k === 'headshot' ? await many(() => render(0.5, fn)) : [await render(0.4, fn)];
     b.slideLoop = slideLoop();
     this.ready = true;
@@ -510,6 +540,14 @@ export class Sound {
     on('slide', (c) => {
       if (me(c)) this.play('slideStart', { gain: 0.25 });
       else this.play('slideStart', { pos: c.position, gain: 0.35, ref: 2.5, maxDist: 25, cheap: true });
+    });
+    // Mystery box: heard by everyone nearby, from the box
+    const atBox = (box, user) => (me(user) ? { gain: 0.5 } : { pos: box.position, gain: 0.5, ref: 3, maxDist: 40, cheap: true });
+    on('boxSpin', (box, user) => { box.soundUser = user; this.play('box_reel', atBox(box, user)); });
+    on('boxTick', (box, k) => this.play('box_tick', { ...atBox(box, box.soundUser), rate: 1.05 - k * 0.15 }));
+    on('boxWin', (box, spec) => {
+      const name = spec.rarity === 'legendary' ? 'box_winLegendary' : spec.rarity === 'rare' ? 'box_winRare' : 'box_winCommon';
+      this.play(name, { ...atBox(box, box.soundUser), gain: 0.55 });
     });
     on('hurt', (c, dealt) => { if (me(c) && dealt > 0) this.play('hurt', { gain: 0.5 }); });
   }
