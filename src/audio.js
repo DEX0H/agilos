@@ -221,11 +221,54 @@ const BODY = {
   },
 };
 const UI = {
-  hit: (ctx, out) => { tone(ctx, out, { freq: 2100, peak: 0.6, decay: 0.035 }); tone(ctx, out, { freq: 3150, peak: 0.25, decay: 0.025 }); },
-  headshot: (ctx, out) => { tone(ctx, out, { freq: 2600, peak: 0.7, decay: 0.22 }); tone(ctx, out, { freq: 3900, peak: 0.4, decay: 0.15 }); tone(ctx, out, { freq: 5300, peak: 0.15, decay: 0.08 }); },
+  // Body hit: a crisp, punchy marker that cuts through gunfire: a tight bright click,
+  // a short tonal blip on top and a soft thwack of the impact underneath
+  hit: (ctx, out) => {
+    noise(ctx, out, { type: 'bandpass', freq: jit(3600, 0.05), q: 1.6, peak: 0.9, attack: 0.0005, decay: 0.008 });
+    tone(ctx, out, { type: 'triangle', freq: jit(1650, 0.03), to: 1450, peak: 0.55, attack: 0.001, decay: 0.045 });
+    noise(ctx, out, { type: 'lowpass', freq: 700, peak: 0.55, attack: 0.001, decay: 0.035 });
+  },
+  // Headshot: unmistakably different: a crunchy snap, then a bright metallic "ding" (a
+  // helmet ring, inharmonic partials) that hangs for a moment
+  headshot: (ctx, out) => {
+    noise(ctx, out, { type: 'bandpass', freq: jit(2200, 0.05), q: 0.9, peak: 0.9, attack: 0.0005, decay: 0.018 });
+    noise(ctx, out, { type: 'lowpass', freq: 900, peak: 0.6, attack: 0.001, decay: 0.05 });
+    for (const [f, a, d] of [[1880, 0.6, 0.42], [2710, 0.45, 0.32], [4150, 0.3, 0.22], [5820, 0.18, 0.14]]) {
+      tone(ctx, out, { freq: jit(f, 0.01), peak: a, t: 0.006, attack: 0.001, decay: d });
+    }
+  },
   kill: (ctx, out) => { tone(ctx, out, { type: 'triangle', freq: 660, peak: 0.6, decay: 0.12 }); tone(ctx, out, { type: 'triangle', freq: 990, t: 0.07, peak: 0.6, decay: 0.18 }); },
   heal: (ctx, out) => { tone(ctx, out, { freq: 620, to: 880, peak: 0.5, attack: 0.01, decay: 0.25 }); tone(ctx, out, { freq: 1240, t: 0.08, peak: 0.25, decay: 0.25 }); },
 };
+
+// ---------- Mystery box: a casino slot reel ----------
+const BOX = {
+  // The reel whirring up and winding down over the 1.1 s spin
+  reel: (ctx, out) => {
+    noise(ctx, out, { type: 'bandpass', freq: [700, 1600], q: 2.5, peak: 0.35, attack: 0.25, decay: 0.9 });
+    tone(ctx, out, { type: 'sawtooth', freq: 55, to: 38, peak: 0.12, attack: 0.2, decay: 0.95 });
+  },
+  // One peg flicking past the pointer
+  tick: (ctx, out) => {
+    noise(ctx, out, { type: 'bandpass', freq: jit(2800, 0.08), q: 3, peak: 0.8, attack: 0.0004, decay: 0.012 });
+    tone(ctx, out, { type: 'triangle', freq: jit(1250, 0.05), peak: 0.35, attack: 0.0005, decay: 0.025 });
+  },
+  // Wins by rarity: a bell ding, a two-note chime, a jackpot run with coins
+  winCommon: (ctx, out) => bell(ctx, out, 1320, 0, 0.8, 0.7),
+  winRare: (ctx, out) => { bell(ctx, out, 1047, 0, 0.75, 0.6); bell(ctx, out, 1568, 0.12, 0.85, 0.9); },
+  winLegendary: (ctx, out) => {
+    [1047, 1319, 1568, 2093].forEach((f, i) => bell(ctx, out, f, i * 0.08, 0.7, 0.5));
+    bell(ctx, out, 2093, 0.34, 0.9, 1.3);
+    bell(ctx, out, 2637, 0.34, 0.5, 1.1);
+    for (let i = 0; i < 14; i++) noise(ctx, out, { type: 'bandpass', freq: jit(5200, 0.25), q: 6, t: 0.35 + i * 0.06 + Math.random() * 0.03, peak: 0.25, attack: 0.001, decay: 0.05 });
+  },
+};
+// A small bright bell: a few inharmonic partials that ring out
+function bell(ctx, out, f, t, peak, decay) {
+  for (const [r, a] of [[1, 1], [2.76, 0.4], [5.4, 0.18], [8.93, 0.08]]) {
+    tone(ctx, out, { freq: f * r, t, peak: peak * a, attack: 0.002, decay: decay / Math.sqrt(r) });
+  }
+}
 
 // Looping slide scrape: gritty band-limited noise with a grainy wobble (seamless loop)
 function slideLoop() {
@@ -310,7 +353,8 @@ export class Sound {
     for (const name of Object.keys(GUNS)) b[`shot_${name}`] = await many(() => gunshot(name));
     for (const [k, fn] of Object.entries(MECH)) b[k] = await many(() => render(k === 'bolt' ? 0.6 : 0.25, fn));
     for (const [k, fn] of Object.entries(BODY)) b[k] = await many(() => render(k === 'land' ? 0.3 : 0.4, fn));
-    for (const [k, fn] of Object.entries(UI)) b[k] = [await render(0.4, fn)];
+    for (const [k, fn] of Object.entries(BOX)) b[`box_${k}`] = k === 'tick' ? await many(() => render(0.1, fn)) : [await render(k === 'winLegendary' ? 1.8 : 1.3, fn)];
+    for (const [k, fn] of Object.entries(UI)) b[k] = k === 'hit' || k === 'headshot' ? await many(() => render(0.5, fn)) : [await render(0.4, fn)];
     b.slideLoop = slideLoop();
     this.ready = true;
     this.listen();
@@ -497,11 +541,20 @@ export class Sound {
       if (me(c)) this.play('slideStart', { gain: 0.25 });
       else this.play('slideStart', { pos: c.position, gain: 0.35, ref: 2.5, maxDist: 25, cheap: true });
     });
+    // Mystery box: heard by everyone nearby, from the box
+    const atBox = (box, user) => (me(user) ? { gain: 0.5 } : { pos: box.position, gain: 0.5, ref: 3, maxDist: 40, cheap: true });
+    on('boxSpin', (box, user) => { box.soundUser = user; this.play('box_reel', atBox(box, user)); });
+    on('boxTick', (box, k) => this.play('box_tick', { ...atBox(box, box.soundUser), rate: 1.05 - k * 0.15 }));
+    on('boxWin', (box, spec) => {
+      const name = spec.rarity === 'legendary' ? 'box_winLegendary' : spec.rarity === 'rare' ? 'box_winRare' : 'box_winCommon';
+      this.play(name, { ...atBox(box, box.soundUser), gain: 0.55 });
+    });
     on('hurt', (c, dealt) => { if (me(c) && dealt > 0) this.play('hurt', { gain: 0.5 }); });
   }
 
   // Feedback for your own hits (called from the game)
-  hit(headshot) { this.play(headshot ? 'headshot' : 'hit', { gain: headshot ? 0.35 : 0.3 }); }
+  // A few hundredths of a second after the shot, so the gun's crack doesn't mask it
+  hit(headshot) { this.play(headshot ? 'headshot' : 'hit', { gain: headshot ? 0.55 : 0.45, delay: 0.035 }); }
   kill() { this.play('kill', { gain: 0.35, delay: 0.05 }); }
   heal() { this.play('heal', { gain: 0.4 }); }
 }

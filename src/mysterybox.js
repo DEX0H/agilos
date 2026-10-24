@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { emit } from './events.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { BOX_WEAPONS, RARITY_COLORS, rollBoxWeapon } from './gun.js';
 import { buildGunModel } from './gunmodels.js';
@@ -226,6 +227,7 @@ class MysteryBox {
     this.onResult = onResult;
     this.result = rollBoxWeapon();
     this.flick = 0;
+    emit('boxSpin', this, user);
     return true;
   }
 
@@ -239,6 +241,7 @@ class MysteryBox {
       this.flick -= dt;
       if (this.flick <= 0) {
         this.flick = 0.05 + 0.16 * k * k;
+        emit('boxTick', this, k);
         const others = BOX_WEAPONS.filter((s) => s !== this.shown);
         this.showModel(others[Math.floor(Math.random() * others.length)]);
       }
@@ -250,6 +253,7 @@ class MysteryBox {
         const give = this.onResult;
         this.onResult = null;
         if (give) give(this.result);
+        emit('boxWin', this, this.result);
       }
     } else if (this.state === 'showing') {
       wantOpen = 1;

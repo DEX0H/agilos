@@ -287,6 +287,7 @@ function useBox() {
 
 let fps = 60;
 let hitmarkerTimer = 0;
+let hitHead = false; // last hit was a headshot: red, bigger marker
 
 // 1 = handgun, 2 = knife. F flips the knife.
 function setWeapon(w) {
@@ -376,7 +377,7 @@ document.addEventListener('mousedown', (e) => {
   player.syncAim();
   const r = active.fire(world);
   stats.shot(r);
-  if (r.hit) { hitmarkerTimer = 0.15; sound.hit(r.headshot); }
+  if (r.hit) { hitmarkerTimer = 0.15; hitHead = r.headshot; sound.hit(r.headshot); }
 });
 document.addEventListener('mouseup', (e) => {
   if (e.button === 0) weapon.triggerHeld = false;
@@ -795,7 +796,7 @@ function frame(now) {
     player.syncAim();
     const r = weapon.fire(world);
     stats.shot(r);
-    if (r.hit) { hitmarkerTimer = 0.15; sound.hit(r.headshot); }
+    if (r.hit) { hitmarkerTimer = 0.15; hitHead = r.headshot; sound.hit(r.headshot); }
   }
   weapon.update(dt);
   knife.update(dt);
@@ -862,6 +863,7 @@ function frame(now) {
 
   hitmarkerTimer = Math.max(0, hitmarkerTimer - dt);
   css(hitmarker, 'opacity', (hitmarkerTimer / 0.15).toFixed(2));
+  cls(hitmarker, hitHead ? 'head' : '');
   css(damageVignette, 'opacity', (player.damageFlash / 0.35).toFixed(2));
   const cardOn = updateDeathCard();
   updateCountdown(dt);
