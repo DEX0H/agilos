@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { emit } from './events.js';
 import { basisQuat } from './fparms.js';
 import { CURLS } from './weapon.js';
 
@@ -107,6 +108,7 @@ export class Knife {
     const result = { fired: false, hit: false, headshot: false, kill: false };
     if (this.cooldown > 0 || this.player.dead) return result;
     result.fired = true;
+    emit('slash', this.player);
     this.player.dropShield();
 
     this.cooldown = COOLDOWN;

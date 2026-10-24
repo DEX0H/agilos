@@ -1,6 +1,6 @@
 import {
   ACTIONS, settings, bindLabel, bind, capture, resetDefaults, setLayout, setSens, setBots, MIN_BOTS, MAX_BOTS,
-  setDifficulty, DIFFICULTIES,
+  setDifficulty, DIFFICULTIES, setVolume,
   detectedLayout, onSettingsChange,
 } from './settings.js';
 
@@ -86,7 +86,28 @@ export function buildControlsPanel(container, hints) {
   }
   diffSel.addEventListener('change', () => { setDifficulty(diffSel.value); refresh(); });
   diffRow.append(diffSel);
-  general.append(layoutRow, sensRow, botsRow, diffRow);
+  // Volumes
+  const volRow = (label, key) => {
+    const row = el('label', 'field');
+    row.append(el('span', 'field-name', label));
+    const wrap = el('div', 'sens');
+    const sl = el('input');
+    sl.type = 'range';
+    sl.min = '0';
+    sl.max = '100';
+    sl.step = '1';
+    const num = el('input', 'sens-num');
+    num.type = 'number';
+    num.min = '0';
+    num.max = '100';
+    wrap.append(sl, num);
+    row.append(wrap);
+    sl.addEventListener('input', () => { setVolume(key, parseInt(sl.value, 10) / 100); refresh(); });
+    num.addEventListener('change', () => { setVolume(key, (parseInt(num.value, 10) || 0) / 100); refresh(); });
+    return { row, sl, num, key };
+  };
+  const vols = [volRow('Effects', 'sfxVol'), volRow('Music', 'musicVol')];
+  general.append(layoutRow, sensRow, botsRow, diffRow, ...vols.map((v) => v.row));
   container.append(general);
 
   // Key bindings
@@ -138,6 +159,10 @@ export function buildControlsPanel(container, hints) {
     sel.value = settings.layout;
     botsSlider.value = String(settings.bots);
     diffSel.value = settings.difficulty;
+    for (const v of vols) {
+      v.sl.value = String(Math.round(settings[v.key] * 100));
+      v.num.value = String(Math.round(settings[v.key] * 100));
+    }
     botsVal.value = String(settings.bots);
     slider.value = String(settings.sens);
     sensVal.value = settings.sens.toFixed(2);

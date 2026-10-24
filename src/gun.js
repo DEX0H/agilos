@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { emit } from './events.js';
 
 // Gun logic shared by the player and bots: ammo, reload, fire rate,
 // CS-style accuracy and hitscan. No visuals here.
@@ -172,6 +173,7 @@ export class GunState {
   reload() {
     if (this.reloadTimer > 0 || this.ammo === this.magSize || this.reserve <= 0) return;
     this.reloadTimer = this.spec.reloadTime;
+    emit('reload', this.owner, this.spec);
   }
 
   finishReload() {
@@ -206,6 +208,7 @@ export class GunState {
     const res = { fired: false, hit: false, headshot: false, kill: false, target: null, end: null };
     if (this.owner.dead || this.reloadTimer > 0 || this.cooldown > 0) return res;
     if (this.ammo <= 0) {
+      if (this.reserve <= 0) emit('dry', this.owner, this.spec);
       this.reload();
       return res;
     }
@@ -213,6 +216,7 @@ export class GunState {
     this.ammo--;
     this.cooldown = Math.min(0, this.cooldown) + this.spec.fireInterval;
     res.fired = true;
+    emit('shot', this.owner, this.spec);
     this.owner.dropShield();
 
     const spread = this.spread();

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { emit } from './events.js';
 import { nearbyBoxes } from './physics.js';
 
 // Shared movement and health for anything that plays: the local player, bots,
@@ -164,6 +165,7 @@ export class Character {
     if (this.onDamaged) this.onDamaged(dealt, attacker);
     if (attacker && attacker.onDealt) attacker.onDealt(dealt, this);
     this.damageFlash = 0.35;
+    emit('hurt', this, dealt, attacker);
     this.hitStrength = Math.min(1, amount / 60); // a headshot (62.5) is a full-strength hit
     this.lastAttacker = attacker;
     this.sinceDamage = 0;
@@ -222,6 +224,7 @@ export class Character {
   }
 
   startSlide(hs) {
+    emit('slide', this, hs);
     this.sliding = true;
     this.slideTime = 0;
     // Sprint-slides get a boost; chaining slides (slide hopping) keeps speed but no more boost
@@ -359,6 +362,17 @@ export class Character {
   }
 
   finishStep(dt) {
+    // Footsteps: one every stride walked on the ground (longer strides when sprinting)
+    if (this.onGround && !this.sliding && !this.mantle && !this.dead) {
+      const hs = Math.hypot(this.velocity.x, this.velocity.z);
+      this.stepDist = (this.stepDist || 0) + hs * dt;
+      const crouch = this.height < STAND_H;
+      const stride = crouch ? 1.15 : hs > 8.5 ? 2.4 : 1.8;
+      if (hs > 0.8 && this.stepDist > stride) {
+        this.stepDist = 0;
+        emit('step', this, hs, crouch);
+      }
+    }
     this.airTime = this.onGround ? 0 : this.airTime + dt;
     this.updateState();
     const targetEye = this.height - EYE_BELOW_TOP;
@@ -393,6 +407,7 @@ export class Character {
       vel.y = JUMP_VEL;
       this.onGround = false;
       this.canDouble = true;
+      emit('jump', this, 'jump');
       if (this.sliding) {
         vel.x *= SLIDE_JUMP_BOOST;
         vel.z *= SLIDE_JUMP_BOOST;
@@ -408,11 +423,13 @@ export class Character {
       this.wallJump(this.wallNormal.x, this.wallNormal.z, 1);
     } else if (this.canDouble) {
       vel.y = DOUBLE_JUMP_VEL;
+      emit('jump', this, 'double');
       this.canDouble = false;
     }
   }
 
   wallJump(nx, nz, strength) {
+    emit('jump', this, 'wall');
     const vel = this.velocity;
     vel.y = WALL_JUMP_UP * strength;
     vel.x = nx * WALL_JUMP_OUT * strength;
@@ -487,6 +504,7 @@ export class Character {
   }
 
   startMantle(ledge, fx, fz) {
+    emit('jump', this, 'mantle');
     this.mantle = {
       t: 0,
       from: this.position.clone(),
@@ -565,6 +583,7 @@ export class Character {
     this.moveVertical(this.velocity.y * dt);
     this.updateGround();
     if (this.onGround && !wasGround) {
+      emit('land', this, fall);
       // Landing: a short bunny-hop window, and a hard landing slows you briefly
       this.landGrace = BHOP_GRACE;
       this.climbUsed = false;
