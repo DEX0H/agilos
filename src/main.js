@@ -634,6 +634,9 @@ function canRestart() {
   return match.state === 'over' || (match.state === 'live' && player.dead);
 }
 
+// Closing the page closes your lobby too (its document is deleted; best effort)
+window.addEventListener('pagehide', () => { if (net.active) net.leave(); });
+
 // Reloads are sent to the host with the next input
 on('reload', (owner) => { if (net.client && owner === player) net.client.pending.reload = true; });
 
