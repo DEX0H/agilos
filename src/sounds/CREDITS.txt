@@ -1,0 +1,9 @@
+Hitmarker sounds: mixed from these Freesound recordings, all released under
+Creative Commons 0 (public domain). No attribution required; credited anyway.
+
+hit_*.wav       322640  https://freesound.org/s/322640/  "Hitmarker Sound Effect.mp3"
+                478057  https://freesound.org/s/478057/  "Hit.wav"
+                570335  https://freesound.org/s/570335/  "Hitmarker Sound Effect"
+headshot_*.wav  660769  https://freesound.org/s/660769/  "Headshot sound"
+                548219  https://freesound.org/s/548219/  "Dink!"
+                217459-217462  https://freesound.org/s/217459/ (series) "Metal Ping 1-4"

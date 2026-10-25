@@ -2,6 +2,18 @@ import * as THREE from 'three';
 import { on } from './events.js';
 import { settings, onSettingsChange } from './settings.js';
 import { composeBeat } from './music.js';
+// Recorded hitmarkers (Freesound CC0, see src/sounds/CREDITS.txt), inlined so they
+// work offline and in the desktop app with no extra requests
+import hit0 from './sounds/hit_0.wav?inline';
+import hit1 from './sounds/hit_1.wav?inline';
+import hit2 from './sounds/hit_2.wav?inline';
+import hit3 from './sounds/hit_3.wav?inline';
+import head0 from './sounds/headshot_0.wav?inline';
+import head1 from './sounds/headshot_1.wav?inline';
+import head2 from './sounds/headshot_2.wav?inline';
+import head3 from './sounds/headshot_3.wav?inline';
+const SAMPLES = { hit: [hit0, hit1, hit2, hit3], headshot: [head0, head1, head2, head3] };
+
 
 // All game sound, synthesized in code (no sample files, nothing to license):
 // gunshots per weapon (crack, body, low thump, street echo), reloads, dry fire, knife,
@@ -266,6 +278,7 @@ const BOX = {
 // A small bright bell: a few inharmonic partials that ring out
 function bell(ctx, out, f, t, peak, decay) {
   for (const [r, a] of [[1, 1], [2.76, 0.4], [5.4, 0.18], [8.93, 0.08]]) {
+    if (f * r > 18000) continue;
     tone(ctx, out, { freq: f * r, t, peak: peak * a, attack: 0.002, decay: decay / Math.sqrt(r) });
   }
 }
@@ -356,11 +369,23 @@ export class Sound {
     for (const [k, fn] of Object.entries(BOX)) b[`box_${k}`] = k === 'tick' ? await many(() => render(0.1, fn)) : [await render(k === 'winLegendary' ? 1.8 : 1.3, fn)];
     for (const [k, fn] of Object.entries(UI)) b[k] = k === 'hit' || k === 'headshot' ? await many(() => render(0.5, fn)) : [await render(0.4, fn)];
     b.slideLoop = slideLoop();
+    await this.loadSamples();
     this.ready = true;
     this.listen();
     // The beat takes a moment longer to render; it fades in when ready
     this.beat = await composeBeat(RATE);
     this.startMusic();
+  }
+
+  // Swap the synthesized hit / headshot for the recorded ones (synth stays as fallback)
+  async loadSamples() {
+    for (const [k, urls] of Object.entries(SAMPLES)) {
+      try {
+        this.buffers[k] = await Promise.all(urls.map(async (u) => this.ctx.decodeAudioData(await (await fetch(u)).arrayBuffer())));
+      } catch (e) {
+        console.warn('Hit sample failed, using synth', e);
+      }
+    }
   }
 
   startMusic() {
@@ -554,7 +579,7 @@ export class Sound {
 
   // Feedback for your own hits (called from the game)
   // A few hundredths of a second after the shot, so the gun's crack doesn't mask it
-  hit(headshot) { this.play(headshot ? 'headshot' : 'hit', { gain: headshot ? 0.55 : 0.45, delay: 0.035 }); }
+  hit(headshot) { this.play(headshot ? 'headshot' : 'hit', { gain: headshot ? 0.6 : 0.5, delay: 0.03 }); }
   kill() { this.play('kill', { gain: 0.35, delay: 0.05 }); }
   heal() { this.play('heal', { gain: 0.4 }); }
 }
