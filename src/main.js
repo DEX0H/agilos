@@ -32,6 +32,11 @@ import { DeathCam } from './deathcam.js';
 import { FPArms } from './fparms.js';
 import { Sound } from './audio.js';
 import { mergeStatic } from './merge.js';
+import { on } from './events.js';
+import { Net } from './net/net.js';
+import { RemotePlayer } from './net/actors.js';
+import { buildLobbyUI } from './net/lobby-ui.js';
+import { profile } from './profile.js';
 
 // Low-latency canvas: `desynchronized` lets the browser present frames without
 // waiting on the page compositor where supported (Chrome, Edge).
@@ -76,7 +81,25 @@ let arena = null;
 let nav = null;
 let cityGroup = null;
 let mapToken = 0;
-const rollLots = () => 3 + Math.floor(Math.random() * 8);
+const forcedLots = (() => {
+  const q = new URLSearchParams(location.search);
+  const n = Number(q.get('lots'));
+  return q.has('debug') && n >= 3 && n <= 10 ? Math.floor(n) : 0; // testing only
+})();
+const rollLots = () => forcedLots || 3 + Math.floor(Math.random() * 8);
+// Seeded random numbers: in a network match every game builds the same map, boxes and
+// pickups from the host's seed
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 const boxCountFor = (lots) => 4 + Math.round(((lots - 3) * 8) / 7);
 
 function disposeTree(root) {
@@ -86,11 +109,11 @@ function disposeTree(root) {
   });
 }
 
-function buildMap(lots) {
+function buildMap(lots, seed = newSeed()) {
   const token = ++mapToken;
   if (arena) { arena.group.removeFromParent(); disposeTree(arena.group); }
   if (cityGroup) { cityGroup.removeFromParent(); disposeTree(cityGroup); cityGroup = null; }
-  arena = buildArena(scene, { lots, seed: Math.floor(Math.random() * 2 ** 31) });
+  arena = buildArena(scene, { lots, seed });
   colliders.length = 0;
   colliders.push(...arena.colliders);
   colliders.grid = new ColliderGrid(colliders);
@@ -122,11 +145,12 @@ bots.setPickups(pickups);
 pickups.onPickup = (c, it) => {
   if (c === player) sound.heal();
   if (c === player) showToast(`+${KINDS[it.kind].heal} HP  ·  ${KINDS[it.kind].label}`, '#7dff9a', 1.6);
+  if (netGame.onPickupNet) netGame.onPickupNet(c, pickups.items.indexOf(it));
 };
 
 // Point everything at the current map
-function useMap() {
-  pickups.setMap(arena.navPoints, arena.half);
+function useMap(rand = Math.random) {
+  pickups.setMap(arena.navPoints, arena.half, rand);
   boxes.half = arena.half;
   bots.setMap(nav, arena.mobSpawns);
   match.spawnPoints = [arena.playerSpawn, ...arena.mobSpawns];
@@ -160,21 +184,46 @@ let active = weapon;
 // A new match also moves the mystery boxes to new random spots. The camera swoops down
 // from above the spawn into first person during the countdown.
 let boxHintShown = false;
+// Same map, boxes and pickups from a seed (the host sends it to everyone in its lobby)
+function seededMap(lots, seed) {
+  buildMap(lots, seed);
+  useMap(seeded(seed + 2));
+  boxes.setMap(arena.navPoints, boxCountFor(arena.lots), arena.half, seeded(seed + 1));
+}
+
 function startMatch() {
+  if (net.client) return; // in someone's lobby, their game starts matches
+  const host = net.host;
+  // Players who dropped out last match (played on by bots) leave now
+  for (const c of [...world.combatants]) if (c instanceof RemotePlayer) netGame.removeCombatant(c);
   // A fresh random map for every match after the first (the first uses the one already
-  // loaded, so clicking in doesn't stall)
-  if (mapPlayed) {
-    buildMap(rollLots());
-    useMap();
-    boxes.setMap(arena.navPoints, boxCountFor(arena.lots), arena.half);
+  // loaded, so clicking in doesn't stall). Lobby matches always build one from a seed.
+  const lots = rollLots();
+  const seed = newSeed();
+  if (mapPlayed || host) {
+    seededMap(lots, seed);
   } else {
     boxes.place();
   }
   mapPlayed = true;
-  bots.setCount(settings.bots);
+  if (host) {
+    const remotes = host.createRemotes(arena.playerSpawn, [arena.playerSpawn, ...arena.mobSpawns]);
+    for (const r of remotes) {
+      Object.assign(r, { boxes, pickups, match });
+      world.add(r);
+    }
+    const humans = 1 + remotes.length;
+    bots.setCount(host.settings.fill ? Math.max(humans < 2 ? 1 : 0, host.settings.max - humans) : humans < 2 ? 1 : 0);
+  } else {
+    bots.setCount(settings.bots);
+  }
+  assignNetIds();
   match.start();
+  if (host) host.started({ lots, seed });
   showToast(`${arena.half * 2 <= 61 ? 'DOWNTOWN' : 'CITY'}  ·  ${Math.round(arena.half * 2)} × ${Math.round(arena.half * 2)} m`, '#dfe9ff', 3);
-  stats.start();
+  // Lobby matches aren't saved to your stats yet (the host's game decides them)
+  if (net.active) stats.cur = null;
+  else stats.start();
   deathCam.reset();
   deathCam.startIntro();
   deathInfo = null;
@@ -276,6 +325,7 @@ function useBox() {
   if (!player.locked || player.dead || player.frozen) return;
   const box = boxes.inReach(player, camera.getWorldDirection(new THREE.Vector3()));
   if (!box || !box.ready) return;
+  if (net.client) { net.client.pending.use = true; return; }
   box.spin(player, (spec) => {
     if (player.dead) return;
     weapon.equip(spec);
@@ -329,9 +379,7 @@ document.addEventListener('keydown', (e) => {
     showToast(`Sensitivity ${settings.sens.toFixed(2)}`);
   }
   // Enter starts a new match once you are out or the match is over
-  if (e.code === 'Enter' && !e.repeat && (match.state === 'over' || (match.state === 'live' && player.dead))) {
-    restartMatch();
-  }
+  if (e.code === 'Enter' && !e.repeat && canRestart()) restartMatch();
 });
 
 document.addEventListener('pointerlockchange', () => {
@@ -342,7 +390,8 @@ document.addEventListener('pointerlockchange', () => {
   // First time you click in, the match begins; after dying or a finished match, clicking
   // back in starts a new one
   sound.setMusic(locked);
-  if (locked && match.state === 'warmup') startMatch();
+  // In a lobby, matches start from the lobby (the host's Start button), not on click
+  if (net.active) { /* nothing */ } else if (locked && match.state === 'warmup') startMatch();
   else if (locked && (match.state === 'over' || player.dead)) restartMatch();
   if (!locked) weapon.release();
 });
@@ -358,9 +407,9 @@ document.addEventListener('agilos:lockfailed', showLockFailed);
 // Holding it keeps automatic weapons firing (see the frame loop). Right click scopes.
 document.addEventListener('mousedown', (e) => {
   if (!player.locked) return;
-  // Match over: a click plays again
+  // Match over: a click plays again (in a lobby, only the host restarts)
   if (match.state === 'over' && e.button === 0) {
-    restartMatch();
+    if (!net.client) restartMatch();
     return;
   }
   // Dead: spectator mode. Left / right click switch between the players still alive.
@@ -375,10 +424,23 @@ document.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || player.frozen) return;
   if (active === weapon) weapon.triggerHeld = true;
   player.syncAim();
+  fireActive();
+});
+
+// One shot (or slash). In someone's lobby the shot shows at once, but whether it hit is
+// the host's call: the hitmarker comes back from there.
+function fireActive() {
+  const aimYaw = player.yaw + player.recoilYaw;
+  const aimPitch = player.pitch + player.recoilPitch;
   const r = active.fire(world);
+  if (net.client) {
+    if (r.fired && active === knife) net.client.pending.slash = true;
+    else if (r.fired) net.client.noteFire(aimYaw, aimPitch);
+    return;
+  }
   stats.shot(r);
   if (r.hit) { hitmarkerTimer = 0.15; hitHead = r.headshot; sound.hit(r.headshot); }
-});
+}
 document.addEventListener('mouseup', (e) => {
   if (e.button === 0) weapon.triggerHeld = false;
   if (e.button === 2) weapon.scopeHeld = false;
@@ -439,11 +501,147 @@ stats.onSaved = (record) => {
 };
 initProfile().catch((e) => console.warn('Profiles unavailable', e));
 
+// ---- Multiplayer: lobbies with a code (see src/net) ----
+const playText = document.querySelector('.play');
+const PLAY_TEXT = playText.textContent;
+let ammoMismatch = 0;
+const netGame = {
+  scene, world, match, boxes, pickups,
+  get player() { return player; },
+  nav: () => nav,
+  onPickupNet: null,
+  toast: (t) => showToast(t, '#dfe9ff', 2.5),
+  removeCombatant(c) {
+    world.remove(c);
+    if (c.group) c.group.removeFromParent();
+  },
+  knifeOut: () => active === knife,
+  ringText: (t) => showToast(t, t.includes('CLOSING') ? '#ff8a5c' : '#dfe9ff', 2.5),
+  hitConfirm(head) { hitmarkerTimer = 0.15; hitHead = head; sound.hit(head); },
+  healed(it) {
+    sound.heal();
+    showToast(`+${KINDS[it.kind].heal} HP  ·  ${KINDS[it.kind].label}`, '#7dff9a', 1.6);
+  },
+  boxWin(spec) {
+    if (player.dead) return;
+    weapon.equip(spec);
+    setWeapon(weapon);
+    ammoMismatch = 0;
+    showToast(`${spec.label.toUpperCase()}  ·  ${RARITY_NAMES[spec.rarity]}`, RARITY_COLORS[spec.rarity], 2.2);
+  },
+  localDied(killer) {
+    if (player.dead) return;
+    player.dead = true;
+    player.health = 0;
+    player.deaths++;
+    player.respawnTimer = 1e9;
+    player.lastAttacker = killer || player.lastAttacker;
+  },
+  // The host's view of your weapon wins if ours disagrees for a moment (a box result
+  // landing, ammo after a lost packet)
+  syncAmmo(spec, ammo, reserve, reloadTimer) {
+    const g = weapon.gun;
+    if (g.spec !== spec) {
+      ammoMismatch += 1 / 30;
+      if (ammoMismatch > 0.6) { weapon.equip(spec); ammoMismatch = 0; }
+      return;
+    }
+    ammoMismatch = 0;
+    if (weapon.sinceShot > 0.5 && g.reloadTimer <= 0 && reloadTimer <= 0 && (g.ammo !== ammo || g.reserve !== reserve)) {
+      g.ammo = Math.min(ammo, g.magSize);
+      g.reserve = reserve;
+    }
+  },
+  // A lobby match is starting on this (joining) computer
+  clientStart(lots, seed) {
+    for (const c of [...world.combatants]) if (c instanceof RemotePlayer) netGame.removeCombatant(c);
+    seededMap(lots, seed);
+    mapPlayed = true;
+    bots.setCount(0);
+    match.follower = true;
+    world.authority = false;
+    pickups.follower = true;
+  },
+  placePlayer(pos, yaw) {
+    player.spawn.copy(pos);
+    player.canRespawn = false;
+    player.respawn();
+    player.yaw = yaw;
+    player.pitch = 0;
+    player.kills = 0;
+    player.deaths = 0;
+    player.lastAttacker = null;
+    player.frozen = true;
+  },
+  clientStarted() {
+    Object.assign(match, { state: 'countdown', timer: 3, winner: null, playerPlace: 0 });
+    match.total = world.combatants.length;
+    match.setMapSize(arena.half);
+    match.wall.visible = true;
+    stats.cur = null;
+    deathCam.reset();
+    deathCam.startIntro();
+    deathInfo = null;
+    cardKey = '';
+    deathCard.className = '';
+    savedNote = '';
+    lobbyUI.close();
+    playText.textContent = 'CLICK TO DROP IN';
+    showToast(`${arena.half * 2 <= 61 ? 'DOWNTOWN' : 'CITY'}  ·  ${Math.round(arena.half * 2)} × ${Math.round(arena.half * 2)} m`, '#dfe9ff', 3);
+  },
+  // Left a lobby (or it closed): back to playing against bots
+  netEnded(reason) {
+    const wasClient = match.follower;
+    match.follower = false;
+    world.authority = true;
+    pickups.follower = false;
+    playText.textContent = PLAY_TEXT;
+    if (wasClient) {
+      for (const c of [...world.combatants]) if (c !== player && !bots.list.includes(c)) netGame.removeCombatant(c);
+      match.state = 'warmup';
+      bots.setCount(settings.bots);
+      for (const b of bots.list) b.frozen = true;
+      player.dead = false;
+      player.canRespawn = true;
+      player.spawn.copy(arena.playerSpawn);
+      player.respawn();
+      deathCam.reset();
+      if (document.pointerLockElement) document.exitPointerLock();
+    }
+    if (reason) showToast(reason, '#ffd27a', 4);
+  },
+};
+const net = new Net(netGame);
+const lobbyUI = buildLobbyUI(document.querySelector('.play-sub'), overlay, net, {
+  onStart: () => { if (net.host) restartMatch(); },
+});
+
+// Who gets which id in snapshots: you 0, players 1 to 15, bots from 20
+function assignNetIds() {
+  player.netId = 0;
+  player.netColour = profile.colour;
+  let n = 1;
+  for (const c of world.combatants) {
+    if (c instanceof RemotePlayer) { c.netId = n++; c.netColour = `#${new THREE.Color(c.bodyColor).getHexString()}`; }
+  }
+  bots.list.forEach((b, i) => { b.netId = 20 + i; b.netColour = `#${new THREE.Color(b.bodyColor).getHexString()}`; });
+}
+
+// A new match: on your own any time you're out; in a lobby only the host, once it's over
+function canRestart() {
+  if (net.client) return false;
+  if (net.active) return match.state === 'over';
+  return match.state === 'over' || (match.state === 'live' && player.dead);
+}
+
+// Reloads are sent to the host with the next input
+on('reload', (owner) => { if (net.client && owner === player) net.client.pending.reload = true; });
+
 const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
 if (DEBUG) window.agilos = {
   player, weapon, knife, setWeapon, world, bots, match, boxes, renderer, scene, postfx, useBox, stats, account,
   get nav() { return nav; }, get arena() { return arena; }, buildMap, useMap, colliders, pickups, arms, sound,
-  deathCam, startMatch, restartMatch,
+  deathCam, startMatch, restartMatch, net, netGame,
   get kills() { return player.kills; },
 };
 
@@ -535,7 +733,10 @@ if (window.agilosDesktop) {
 }
 
 // Ring announcements in the toast line
-match.onRing = (text) => showToast(text, text.includes('CLOSING') ? '#ff8a5c' : '#dfe9ff', 2.5);
+match.onRing = (text) => {
+  showToast(text, text.includes('CLOSING') ? '#ff8a5c' : '#dfe9ff', 2.5);
+  if (net.host) net.host.ring(text);
+};
 
 // Minimap, north (-z) up. Redrawn every few frames; it is cheap.
 function drawMinimap() {
@@ -769,7 +970,9 @@ function updateMarkers() {
 }
 
 let last = performance.now();
-function frame(now) {
+// One game step. `draw` is false when the tab is hidden: a lobby host keeps the match
+// running for everyone, just without drawing it.
+function step(now, draw = true) {
   // Clamp both ways: the first rAF timestamp can be earlier than `last`
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.05));
   const t = now / 1000;
@@ -794,9 +997,7 @@ function frame(now) {
   // Held trigger on an automatic weapon: the gun's own fire rate paces the shots
   if (active === weapon && weapon.triggerHeld && weapon.spec.auto && player.locked && !player.frozen && !player.dead) {
     player.syncAim();
-    const r = weapon.fire(world);
-    stats.shot(r);
-    if (r.hit) { hitmarkerTimer = 0.15; hitHead = r.headshot; sound.hit(r.headshot); }
+    fireActive();
   }
   weapon.update(dt);
   knife.update(dt);
@@ -806,11 +1007,17 @@ function frame(now) {
   if (armsOn) held.model.updateMatrixWorld(true);
   arms.update(held.armPose(), armsOn);
   bots.update(dt);
+  for (const c of world.combatants) if (c instanceof RemotePlayer) c.update(dt);
+  // What other players see of you (on the host)
+  player.knifeOut = active === knife;
+  player.netCombat = active === weapon && (weapon.aim > 0.3 || weapon.sinceShot < 1.5);
+  player.gun = weapon.gun;
   boxes.update(dt, t, camera.position);
   pickups.update(dt, t);
   match.update(dt);
-  stats.update();
+  if (!net.active) stats.update();
   world.update(dt);
+  net.update(dt);
 
   sky.position.copy(camera.position);
   dust.update(t, camera.position);
@@ -886,7 +1093,19 @@ function frame(now) {
     `state   ${player.state}   double jump ${player.canDouble ? 'ready' : 'used'}\n` +
     `fps     ${fps.toFixed(0)}   quality ${quality} (${bindLabel('quality')})   sens ${settings.sens.toFixed(2)} (${bindLabel('sensDown')} ${bindLabel('sensUp')})`);
 
-  postfx.composer.render(dt);
+  if (draw) postfx.composer.render(dt);
+}
+// ?debug&norender: run the game without drawing it (automated network tests)
+const noDraw = new URLSearchParams(location.search).has('norender') && new URLSearchParams(location.search).has('debug');
+function frame(now) {
+  step(now, !noDraw);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// Browsers pause animation frames in hidden tabs. A host's match must go on (the other
+// players are still playing it), so a worker's timer, which keeps running, steps it then.
+try {
+  const ticker = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 16);'], { type: 'text/javascript' })));
+  ticker.onmessage = () => { if (document.hidden && net.host && net.inMatch) step(performance.now(), false); };
+} catch { /* no workers: the match pauses while hidden */ }

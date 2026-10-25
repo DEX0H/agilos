@@ -17,6 +17,10 @@ Settings > Apps > Agilos.
 
 - **Mode:** a battle royale for you and 1 to 15 bots (4 by default, set in the menu).
   Everyone spawns at a random point, there are no respawns, and the last one standing wins.
+- **Play with friends:** sign in, press **Host a lobby** and send your 6-letter code. Friends
+  type it in and press **Join**. The host picks the lobby size (2 to 16) and whether bots fill
+  the empty spots, then starts the match. Games connect directly to each other (WebRTC); the
+  host's game runs the match. Someone who drops out mid-match is played on by a bot.
 - **The ring:** six Apex-style rounds. Each round the next ring is marked (white wall, and a
   dashed circle on the minimap), then the ring closes onto it. Outside, you take damage
   every 1.5 seconds, more each round (3 up to 25), and the last ring closes completely.
@@ -112,6 +116,7 @@ download button and the in-app updater find it.
 | `src/settings.js`, `src/controls-panel.js` | Key bindings, layouts, sensitivity, menu panel |
 | `src/postfx.js`, `src/sky.js`, `src/textures.js`, `src/dust.js` | Visuals |
 | `src/models.js` | Model loading and gun normalisation |
+| `src/net/` | Multiplayer: lobby signaling, WebRTC peers, the host's authority, prediction and interpolation on joining players, lobby menu |
 
 ## Credits
 
@@ -142,7 +147,11 @@ If you create an account, you only choose a username and a password (no email). 
 you can read them. "Delete account and stats" in the profile menu removes all of it.
 Passwords can't be recovered, since there is no email to send a reset to.
 
-Apart from sign-in and stats, the browser version talks only to its own website. The
+Apart from sign-in, stats and lobbies, the browser version talks only to its own website.
+In a lobby, your game connects directly to the host's game, so the two of you can see each
+other's network (IP) address, as with any peer-to-peer game. The connection details pass
+through Firebase only while connecting and are deleted once you're in. Only play with
+people you're happy to share that with. The
 Windows app also checks GitHub Releases (github.com) for updates at launch and every 20
 minutes; untick "Check for updates" in the menu to turn that off. Local settings stay on
 your computer (browser storage, or the app's folder under `%APPDATA%\Agilos`).

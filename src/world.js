@@ -16,6 +16,8 @@ export class World {
     this.combatants = [];
     this.tracers = [];
     this.killListeners = [];
+    this.authority = true;   // false on a network client: the host decides deaths
+    this.onTracer = null;    // (from, to, owner) => void, for the network host
   }
 
   add(c) {
@@ -71,7 +73,8 @@ export class World {
     for (const fn of this.killListeners) fn(killer, victim, how);
   }
 
-  addTracer(a, b) {
+  addTracer(a, b, owner = null) {
+    if (this.onTracer) this.onTracer(a, b, owner);
     const geom = new THREE.BufferGeometry().setFromPoints([a.clone(), b.clone()]);
     const mat = new THREE.LineBasicMaterial({ color: new THREE.Color(4, 3, 1.6), transparent: true, opacity: 0.9 });
     const line = new THREE.Line(geom, mat);
@@ -81,7 +84,7 @@ export class World {
 
   update(dt) {
     // Safety net: anyone who leaves the map dies and respawns
-    for (const c of this.combatants) {
+    for (const c of this.authority ? this.combatants : []) {
       if (!c.dead && c.position.y < -20) {
         c.takeDamage(Infinity, null, true);
         this.reportKill(null, c, 'fell');

@@ -1,5 +1,21 @@
 # Multiplayer design: authoritative server
 
+**Status (2026-10-25):** hosted lobbies are built on this design, with the host's game in
+the server's role (`src/net/`). Code map:
+
+| File | Role |
+| --- | --- |
+| `signal.js` | Lobby codes and the offer/answer exchange (Firestore, or a BroadcastChannel with `?net=local`) |
+| `peer.js` | One WebRTC connection: `state` (unreliable) and `events` (reliable) channels, ping |
+| `proto.js` | Binary input (36 bytes) and snapshot (64 + 30 bytes per player) formats, with validation |
+| `host.js` | The authority: accepts players, runs their characters, snapshots at 30 Hz, events, lag compensation |
+| `actors.js` | `RemotePlayer` (a player's character on the host) and `Puppet` (everyone else on a joining player's game) |
+| `client.js` | Prediction and replay for your own movement, interpolation 100 ms behind for others |
+| `lobby-ui.js` | Host / join menu and the lobby card |
+
+Testing: `?debug&net=local` connects tabs through a BroadcastChannel; `&lag=60` adds 60 ms
+each way; `&norender` skips drawing; `&lots=3` forces the small map.
+
 Today every rule of Agilos runs in the player's browser. That's fine with bots, because a
 player who edits their own game only affects themselves. With real players it isn't:
 a client could claim any position, hit or damage. This note fixes the rules for when

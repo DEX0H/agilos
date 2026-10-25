@@ -238,6 +238,37 @@
         color: #fff; font: 700 18px var(--font-ui); text-shadow: 0 1px 3px #000; opacity: 0;
       }
 
+      /* ---------- Multiplayer: host / join, lobby card ---------- */
+      .mp { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; cursor: default; }
+      .mp-title { font: 600 18px var(--font-display); letter-spacing: 0.16em; color: rgba(255,255,255,0.75); }
+      .mp-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .mp-row .acct-btn { padding: 8px 14px; }
+      .mp-in { font: 600 15px var(--font-ui); color: #fff; }
+      .mp-code {
+        width: 110px; font: 600 20px var(--font-display); letter-spacing: 0.22em; text-transform: uppercase; text-align: center;
+        color: #fff; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.18); border-radius: 3px; padding: 5px 8px; outline: none;
+      }
+      .mp-code:focus { border-color: var(--accent); }
+      .mp-note { margin: 0; font: 500 13.5px var(--font-ui); color: rgba(255,255,255,0.6); }
+      .mp-note.err { color: #ff8a5c; }
+      .mp-card { width: min(460px, 100%); }
+      .mp-coderow { display: flex; align-items: center; gap: 12px; }
+      .mp-bigcode { font: 600 46px/1 var(--font-display); letter-spacing: 0.2em; color: var(--accent); user-select: all; }
+      .mp-list { display: flex; flex-direction: column; gap: 6px; }
+      .mp-member {
+        display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 4px;
+        background: rgba(255,255,255,0.05); border: 1px solid var(--line);
+      }
+      .mp-member b { font: 600 17px var(--font-ui); }
+      .mp-tag { font: 700 11px var(--font-ui); letter-spacing: 0.12em; color: rgba(255,255,255,0.55); }
+      .mp-tag.ok { color: #5fd35a; }
+      .mp-tag.you { color: var(--accent-2); }
+      .mp-ping { margin-left: auto; font: 600 13px var(--font-ui); color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
+      .mp-ping.bad { color: #ff8a5c; }
+      .mp-opts { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      .mp-select { font: 600 14px var(--font-ui); color: #fff; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.18); border-radius: 3px; padding: 6px; }
+      .mp-check { display: flex; gap: 6px; align-items: center; font: 500 14px var(--font-ui); }
+
       /* ---------- Profiles: chip, sign-in card, stats ---------- */
       .acct-chip {
         position: fixed; left: 16px; top: 14px; z-index: 5; display: flex; align-items: center; gap: 8px;
@@ -451,7 +482,7 @@
       <div class="menu">
         <section class="intro">
           <div class="brand">AGILOS</div>
-          <p class="tagline">Battle royale · you vs bots · last one standing</p>
+          <p class="tagline">Battle royale · bots or friends · last one standing</p>
           <div class="play">CLICK TO PLAY</div>
           <p class="play-sub">Click anywhere outside the settings panel. Stay inside the zone.</p>
           <div id="controlstext" class="hints"></div>

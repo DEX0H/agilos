@@ -123,6 +123,7 @@ export class Player extends Character {
     };
     this.jumpQueued = false;
     this.crouchQueued = false;
+    this.lastInput = input;
     this.simulate(dt, this.frozen ? NO_INPUT : input);
     this.updateCamera(dt);
   }

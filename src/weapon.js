@@ -271,7 +271,7 @@ export class Firearm {
     this.slideKick = 1;
     this.applyRecoil(spec.kick);
     this.muzzle.getWorldPosition(_muzzle);
-    world.addTracer(_muzzle, r.end);
+    world.addTracer(_muzzle, r.end, this.player);
     return r;
   }
 

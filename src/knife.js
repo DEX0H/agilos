@@ -21,6 +21,34 @@ const _origin = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _to = new THREE.Vector3();
 
+export const KNIFE_COOLDOWN = COOLDOWN;
+
+// The slash itself: the nearest body in reach, inside the arc and in sight, takes the hit.
+// Shared by the local player and, on a network host, by other players' slashes.
+export function meleeHit(world, attacker, origin, dir) {
+  const res = { hit: false, headshot: false, kill: false, target: null };
+  let best = null;
+  let bestDist = RANGE;
+  for (const c of world.combatants) {
+    if (c === attacker || c.dead) continue;
+    const centre = new THREE.Vector3(c.position.x, c.position.y + c.height * 0.5, c.position.z);
+    _to.copy(centre).sub(origin);
+    const d = _to.length();
+    if (d > bestDist) continue;
+    if (_to.dot(dir) / d < ARC_COS) continue;
+    if (!world.lineOfSight(origin, centre)) continue;
+    best = c;
+    bestDist = d;
+  }
+  if (best) {
+    res.hit = true;
+    res.target = best;
+    res.kill = best.takeDamage(DAMAGE, attacker);
+    if (res.kill) world.reportKill(attacker, best, 'knife');
+  }
+  return res;
+}
+
 export class Knife {
   constructor(camera, scene, player) {
     this.camera = camera;
@@ -119,27 +147,7 @@ export class Knife {
 
     this.camera.getWorldPosition(_origin);
     this.camera.getWorldDirection(_dir);
-
-    let best = null;
-    let bestDist = RANGE;
-    for (const c of world.combatants) {
-      if (c === this.player || c.dead) continue;
-      const centre = new THREE.Vector3(c.position.x, c.position.y + c.height * 0.5, c.position.z);
-      _to.copy(centre).sub(_origin);
-      const d = _to.length();
-      if (d > bestDist) continue;
-      if (_to.dot(_dir) / d < ARC_COS) continue;
-      if (!world.lineOfSight(_origin, centre)) continue;
-      best = c;
-      bestDist = d;
-    }
-
-    if (best) {
-      result.hit = true;
-      result.kill = best.takeDamage(DAMAGE, this.player);
-      if (result.kill) world.reportKill(this.player, best, 'knife');
-    }
-    return result;
+    return Object.assign(result, meleeHit(world, this.player, _origin, _dir));
   }
 
   update(dt) {
