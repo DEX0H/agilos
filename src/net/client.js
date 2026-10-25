@@ -45,7 +45,7 @@ export class NetClient {
     this.closed = false;
     // Testing only: ?debug&lag=50 delays everything 50 ms each way (100 ms ping)
     const q = new URLSearchParams(location.search);
-    this.lag = q.has('debug') ? Math.max(0, Math.min(500, Number(q.get('lag')) || 0)) : 0;
+    this.lag = import.meta.env.DEV && q.has('debug') ? Math.max(0, Math.min(500, Number(q.get('lag')) || 0)) : 0;
   }
 
   later(fn) {
@@ -79,7 +79,8 @@ export class NetClient {
 
   onEvent(msg) {
     const g = this.game;
-    const ent = (id) => this.ents.get(id) || null;
+    const ent = (id) => (Number.isInteger(id) ? this.ents.get(id) || null : null);
+    const at = (list, i) => (Number.isInteger(i) && i >= 0 && i < list.length ? list[i] : null);
     switch (msg.t) {
       case 'lobby':
         this.lobby = sanitizeLobby(msg);
@@ -88,7 +89,7 @@ export class NetClient {
       case 'start': this.start(msg); break;
       case 'shot': {
         const c = ent(msg.id);
-        const spec = WEAPONS[msg.w];
+        const spec = at(WEAPONS, msg.w);
         if (c && c !== g.player && spec) {
           c.flashTimer = 0.05;
           c.shootAnim = 0.3;
@@ -97,14 +98,15 @@ export class NetClient {
         break;
       }
       case 'tr':
-        if (Array.isArray(msg.a) && Array.isArray(msg.b) && [...msg.a, ...msg.b].every(Number.isFinite)) {
+        if (Array.isArray(msg.a) && Array.isArray(msg.b) && msg.a.length === 3 && msg.b.length === 3 &&
+            [...msg.a, ...msg.b].every((x) => Number.isFinite(x) && Math.abs(x) < 1e4)) {
           g.world.addTracer(new THREE.Vector3(...msg.a.slice(0, 3)), new THREE.Vector3(...msg.b.slice(0, 3)));
         }
         break;
       case 'slash': { const c = ent(msg.id); if (c && c !== g.player) emit('slash', c); break; }
       case 'box': {
-        const box = g.boxes.boxes[msg.b];
-        const spec = WEAPONS[msg.r];
+        const box = at(g.boxes.boxes, msg.b);
+        const spec = at(WEAPONS, msg.r);
         const user = ent(msg.u);
         if (!box || !spec) break;
         const mine = user === g.player;
@@ -124,7 +126,7 @@ export class NetClient {
       }
       case 'ring': if (typeof msg.text === 'string') g.ringText(msg.text.slice(0, 40)); break;
       case 'pick': {
-        const it = g.pickups.items[msg.i];
+        const it = at(g.pickups.items, msg.i);
         if (!it) break;
         it.timer = KINDS[it.kind].respawn;
         if (ent(msg.id) === g.player) g.healed(it);

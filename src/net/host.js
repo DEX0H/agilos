@@ -55,14 +55,21 @@ export class NetHost {
 
   async accept(uid, sdp, info) {
     if (this.closed || typeof sdp !== 'string' || sdp.length > 20000) return;
+    this.pending = this.pending || new Set();
+    const known = this.members.some((m) => m.uid === uid);
+    if (!known && (this.members.length + 1 >= this.settings.max || this.pending.size >= 3)) return;
     const name = NAME_RE.test(info.name || '') ? info.name : 'Player';
     const colour = COLOUR_RE.test(info.colour || '') ? info.colour : '#5fa8ff';
     // The same account joining again replaces its old connection
     const old = this.members.find((m) => m.uid === uid);
     if (old) this.drop(old, false);
     const { peer, answer } = await Peer.answer(sdp, this.iceServers);
+    this.pending.add(peer);
+    const giveUp = setTimeout(() => { if (!peer.open) peer.close(); }, 20000);
+    const settle = () => { clearTimeout(giveUp); this.pending.delete(peer); };
     const m = { key: `p${this.nextKey++}`, uid, name, colour, peer, ready: false, remote: null, budget: { s: 0, e: 0, t: 0 } };
     peer.onOpen = () => {
+      settle();
       this.lobby.done(uid);
       if (this.members.length + 1 > this.settings.max) {
         peer.send({ t: 'full' });
@@ -72,7 +79,7 @@ export class NetHost {
       this.members.push(m);
       this.changed();
     };
-    peer.onClose = () => this.drop(m, true);
+    peer.onClose = () => { settle(); this.drop(m, true); };
     peer.onEvent = (msg) => this.onEvent(m, msg);
     peer.onState = (buf) => this.onState(m, buf);
     await this.lobby.answer(uid, answer);

@@ -84,7 +84,7 @@ let mapToken = 0;
 const forcedLots = (() => {
   const q = new URLSearchParams(location.search);
   const n = Number(q.get('lots'));
-  return q.has('debug') && n >= 3 && n <= 10 ? Math.floor(n) : 0; // testing only
+  return import.meta.env.DEV && q.has('debug') && n >= 3 && n <= 10 ? Math.floor(n) : 0; // testing only
 })();
 const rollLots = () => forcedLots || 3 + Math.floor(Math.random() * 8);
 // Seeded random numbers: in a network match every game builds the same map, boxes and
@@ -487,9 +487,7 @@ world.onKill((killer, victim, how) => {
   setTimeout(() => line.remove(), 5000);
 });
 
-// Debug handle for automated testing. Only exposed in local dev or with ?debug in the URL,
-// so it isn't sitting on every player's window object. (Everything client-side can be
-// changed by a determined player anyway; real anti-cheat needs an authoritative server.)
+// Test handle (window.agilos): only on the development server with ?debug in the URL.
 // Profiles: sign-in card, profile chip and stats screen in the menu. Signed-in players
 // show their name in the kill feed.
 const account = buildAccountUI(overlay, (name) => { player.name = name || 'You'; });
@@ -640,7 +638,7 @@ window.addEventListener('pagehide', () => { if (net.active) net.leave(); });
 // Reloads are sent to the host with the next input
 on('reload', (owner) => { if (net.client && owner === player) net.client.pending.reload = true; });
 
-const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
+const DEBUG = import.meta.env.DEV && new URLSearchParams(location.search).has('debug');
 if (DEBUG) window.agilos = {
   player, weapon, knife, setWeapon, world, bots, match, boxes, renderer, scene, postfx, useBox, stats, account,
   get nav() { return nav; }, get arena() { return arena; }, buildMap, useMap, colliders, pickups, arms, sound,
@@ -1099,7 +1097,7 @@ function step(now, draw = true) {
   if (draw) postfx.composer.render(dt);
 }
 // ?debug&norender: run the game without drawing it (automated network tests)
-const noDraw = new URLSearchParams(location.search).has('norender') && new URLSearchParams(location.search).has('debug');
+const noDraw = import.meta.env.DEV && new URLSearchParams(location.search).has('norender');
 function frame(now) {
   step(now, !noDraw);
   requestAnimationFrame(frame);

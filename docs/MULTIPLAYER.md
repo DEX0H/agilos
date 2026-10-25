@@ -13,7 +13,7 @@ the server's role (`src/net/`). Code map:
 | `client.js` | Prediction and replay for your own movement, interpolation 100 ms behind for others |
 | `lobby-ui.js` | Host / join menu and the lobby card |
 
-Testing: `?debug&net=local` connects tabs through a BroadcastChannel; `&lag=60` adds 60 ms
+Testing (dev server, `npm run dev`): `?debug&net=local` connects tabs through a BroadcastChannel; `&lag=60` adds 60 ms
 each way; `&norender` skips drawing; `&lots=3` forces the small map.
 
 Today every rule of Agilos runs in the player's browser. That's fine with bots, because a

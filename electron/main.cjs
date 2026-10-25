@@ -116,12 +116,17 @@ app.whenReady().then(() => {
     done(permission === 'pointerLock' || permission === 'fullscreen');
   });
 
-  ipcMain.handle('agilos:info', () => ({ version: app.getVersion(), ...readPrefs() }));
-  ipcMain.handle('agilos:set-uncapped', (_e, on) => {
+  // Only the game's own page may use these
+  const fromGame = (e) => {
+    try { return new URL(e.senderFrame.url).origin === ORIGIN; } catch { return false; }
+  };
+  const handle = (name, fn) => ipcMain.handle(name, (e, ...args) => (fromGame(e) ? fn(e, ...args) : null));
+  handle('agilos:info', () => ({ version: app.getVersion(), ...readPrefs() }));
+  handle('agilos:set-uncapped', (_e, on) => {
     writePrefs({ ...readPrefs(), uncapped: !!on });
     return readPrefs();
   });
-  ipcMain.handle('agilos:set-auto-update', (_e, on) => {
+  handle('agilos:set-auto-update', (_e, on) => {
     writePrefs({ ...readPrefs(), autoUpdate: !!on });
     return readPrefs();
   });
@@ -136,7 +141,7 @@ app.whenReady().then(() => {
       ready = info.version;
       win?.webContents.send('agilos:update-ready', info.version);
     });
-    ipcMain.handle('agilos:install-update', () => {
+    handle('agilos:install-update', () => {
       if (ready) setImmediate(() => autoUpdater.quitAndInstall(true, true));
       return !!ready;
     });

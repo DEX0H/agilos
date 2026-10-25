@@ -50,11 +50,13 @@ async function firestoreSignal() {
         const expireAt = F.Timestamp.fromMillis(Date.now() + LOBBY_HOURS * 3600e3);
         await F.setDoc(ref, { host: uid, name, max, createdAt: F.serverTimestamp(), expireAt });
         const seen = new Set();
+        const peers = new Set();
         let onOffer = null;
         const unsub = F.onSnapshot(F.collection(db, 'lobbies', code, 'peers'), (qs) => {
           for (const ch of qs.docChanges()) {
             if (ch.type === 'removed') continue;
             const d = ch.doc.data();
+            peers.add(ch.doc.id);
             const key = `${ch.doc.id}:${(d.offer || '').length}:${d.at?.seconds || 0}`;
             if (!d.offer || d.answer || seen.has(key)) continue;
             seen.add(key);
@@ -69,6 +71,7 @@ async function firestoreSignal() {
           done: (peerUid) => F.deleteDoc(F.doc(db, 'lobbies', code, 'peers', peerUid)).catch(() => {}),
           close: async () => {
             unsub();
+            await Promise.all([...peers].map((id) => F.deleteDoc(F.doc(db, 'lobbies', code, 'peers', id)).catch(() => {})));
             await F.deleteDoc(ref).catch(() => {});
           },
         };
@@ -82,7 +85,11 @@ async function firestoreSignal() {
       await F.deleteDoc(ref).catch(() => {});
       await F.setDoc(ref, { offer: offerSdp, name, colour, at: F.serverTimestamp() });
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { unsub(); reject(err('timeout', 'The host did not answer.')); }, ANSWER_TIMEOUT);
+        const timer = setTimeout(() => {
+          unsub();
+          F.deleteDoc(ref).catch(() => {}); // the offer holds network addresses: don't leave it
+          reject(err('timeout', 'The host did not answer.'));
+        }, ANSWER_TIMEOUT);
         const unsub = F.onSnapshot(ref, (snap) => {
           const d = snap.data();
           if (d && d.answer) {

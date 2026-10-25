@@ -22,7 +22,9 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'colour', 'createdAt', 'settings', 'totals'])
         && validName(request.resource.data.name)
         && validColour(request.resource.data.colour)
-        && ownName(request.resource.data.name);
+        && ownName(request.resource.data.name)
+        && (!('settings' in request.resource.data) || request.resource.data.settings is map)
+        && (!('totals' in request.resource.data) || validTotals(request.resource.data.totals));
       allow update: if isOwner(uid)
         && request.resource.data.keys().hasOnly(['name', 'colour', 'createdAt', 'settings', 'totals'])
         && validName(request.resource.data.name)
@@ -73,6 +75,7 @@ service cloud.firestore {
         && request.resource.data.max is int && request.resource.data.max >= 2 && request.resource.data.max <= 16
         && request.resource.data.createdAt == request.time
         && request.resource.data.expireAt is timestamp
+        && request.resource.data.expireAt > request.time
         && request.resource.data.expireAt <= request.time + duration.value(3, 'h');
       allow delete: if signedIn() && resource.data.host == request.auth.uid;
 

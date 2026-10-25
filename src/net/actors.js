@@ -20,7 +20,6 @@ const _aim = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
 const MAX_QUEUE = 90;
 const TIME_BUDGET = 0.25;        // seconds of input a player may run ahead (lag bursts)
-const FIRE_SLACK = 0.03;         // seconds of fire-rate tolerance for timing jitter
 
 function aimVector(yaw, pitch, out) {
   const cp = Math.cos(pitch);
@@ -112,10 +111,7 @@ export class RemotePlayer extends Bot {
     if (inp.reload && !this.knifeOut) this.gun.reload();
     if (inp.use && this.boxes) this.useBox();
     if (inp.fires > 0 && !this.knifeOut) {
-      for (let i = 0; i < inp.fires; i++) {
-        if (this.gun.cooldown > 0 && this.gun.cooldown <= FIRE_SLACK) this.gun.cooldown = 0;
-        this.fireOnce(inp);
-      }
+      for (let i = 0; i < inp.fires; i++) this.fireOnce(inp);
     }
     if (inp.slash && this.knifeOut && this.knifeCooldown <= 0) this.slash(inp);
   }
