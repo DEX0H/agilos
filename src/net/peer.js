@@ -62,7 +62,14 @@ export class Peer {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
       if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
-      if (msg.t === 'ping') { this.send({ t: 'pong', s: msg.s }); return; }
+      if (msg.t === 'ping') {
+        const now = performance.now();
+        if (now - (this.lastPong || 0) > 200 && Number.isFinite(msg.s)) {
+          this.lastPong = now;
+          this.send({ t: 'pong', s: msg.s });
+        }
+        return;
+      }
       if (msg.t === 'pong') {
         const rtt = performance.now() - msg.s;
         if (rtt >= 0 && rtt < 10000) this.rtt = this.rtt ? this.rtt * 0.7 + rtt * 0.3 : rtt;

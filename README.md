@@ -72,7 +72,7 @@ so they work on QWERTY, QWERTZ and AZERTY, and the labels match your layout.
 
 ```sh
 npm install
-npm run dev     # http://localhost:5173 (adds a window.agilos debug handle)
+npm run dev     # http://localhost:5173 (add ?debug for a window.agilos test handle)
 npm run build   # production build in dist/
 ```
 

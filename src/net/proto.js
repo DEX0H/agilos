@@ -221,5 +221,7 @@ export function decodeSnapshot(buf) {
   for (const p of s.players) {
     if (![p.x, p.y, p.z].every(Number.isFinite)) return null;
   }
+  const z = s.zone;
+  if (![s.time, s.timer, s.reloadTimer, z.cx, z.cz, z.r, z.toX, z.toZ, z.toR, z.phaseTime].every(Number.isFinite)) return null;
   return s;
 }
