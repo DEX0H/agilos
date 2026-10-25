@@ -112,8 +112,9 @@ function makeNameTag(text) {
 }
 
 export class Bot extends Character {
-  constructor(scene, world, nav, spawn, index, spawnPoints) {
-    super(world.colliders, spawn, NAMES[index % NAMES.length]);
+  // opts: { name, colour } for players (network players and their stand-ins)
+  constructor(scene, world, nav, spawn, index, spawnPoints, opts = {}) {
+    super(world.colliders, spawn, opts.name || NAMES[index % NAMES.length]);
     this.index = index;
     this.world = world;
     this.nav = nav;
@@ -161,7 +162,7 @@ export class Bot extends Character {
     this.crouchHold = 0;
     this.stuckTimer = 0;
 
-    this.buildModel(scene, COLORS[index % COLORS.length]);
+    this.buildModel(scene, opts.colour || COLORS[index % COLORS.length]);
   }
 
   buildModel(scene, bodyColor) {
@@ -654,7 +655,7 @@ export class Bot extends Character {
         const r = this.gun.fire(this.world, e, _aim);
         if (r.fired) {
           this.muzzle.getWorldPosition(_muzzle);
-          this.world.addTracer(_muzzle, r.end);
+          this.world.addTracer(_muzzle, r.end, this);
           this.flashTimer = 0.05;
           // Automatic weapons fire in bursts; others keep a human-ish gap between shots
           if (spec.auto) this.shotGap = Math.random() < BURST_PAUSE_CHANCE ? 0.25 + Math.random() * 0.3 : 0;

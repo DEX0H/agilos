@@ -219,13 +219,13 @@ class MysteryBox {
   get ready() { return this.state === 'ready'; }
 
   // Start a spin for `user`; `onResult(spec)` runs the moment the spin lands
-  spin(user, onResult) {
-    if (!this.ready) return false;
+  spin(user, onResult, forced = null) {
+    if (!this.ready && !forced) return false;
     this.state = 'spinning';
     this.timer = 0;
     this.user = user;
     this.onResult = onResult;
-    this.result = rollBoxWeapon();
+    this.result = forced || rollBoxWeapon();
     this.flick = 0;
     emit('boxSpin', this, user);
     return true;
@@ -330,6 +330,16 @@ class MysteryBox {
   }
 }
 
+// Fisher-Yates with the given random source (same seed, same order on every game)
+function shuffle(list, rand) {
+  const a = [...list];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 export class MysteryBoxes {
   constructor(scene, world, navPoints, count = BOX_COUNT) {
     this.world = world;
@@ -339,11 +349,11 @@ export class MysteryBoxes {
   }
 
   // A new map: find its box spots, then place `count` boxes. `half` is half the map width.
-  setMap(navPoints, count, half) {
+  setMap(navPoints, count, half, rand = Math.random) {
     this.count = Math.min(MAX_BOXES, count);
     this.half = half;
     this.spots = this.findSpots(navPoints);
-    this.place();
+    this.place(rand);
   }
 
   // Every spot where a box fits flat on a floor with its back against a wall,
@@ -396,7 +406,8 @@ export class MysteryBoxes {
   }
 
   // New random spots, spread out. Called at the start of every match.
-  place() {
+  // `rand` is seeded in network matches so every game puts the boxes in the same places
+  place(rand = Math.random) {
     const colliders = this.world.colliders;
     for (const b of this.boxes) {
       const i = colliders.indexOf(b.collider);
@@ -405,7 +416,7 @@ export class MysteryBoxes {
     // Spots under open sky first (their beam can be seen from across the map), and
     // away from the outer walls where nobody goes; covered spots only fill the gaps
     const open = (s) => s.sky >= 10 && Math.max(Math.abs(s.pos.x), Math.abs(s.pos.z)) < this.half - 3;
-    const shuffled = [...this.spots].sort(() => Math.random() - 0.5);
+    const shuffled = shuffle(this.spots, rand);
     const pool = [...shuffled.filter(open), ...shuffled.filter((s) => !open(s))];
     const chosen = [];
     for (const gap of [MIN_SPACING, MIN_SPACING * 0.6]) {

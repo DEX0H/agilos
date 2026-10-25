@@ -127,13 +127,35 @@ Other sites can embed the game in an iframe. `frame-ancestors` doesn't work from
 actions (no accounts, payments or settings that leave the browser), so the impact is
 negligible. Revisit if the game moves to a host that supports headers.
 
-### 8. Client-side game logic (accepted for now)
+### 8. Client-side game logic (accepted for single player; host-authoritative lobbies)
 
 All rules run in the player's browser, so a determined player can change their own game
-(health, aim, speed). With bots only, this harms no one else. **Before real multiplayer
-ships, the server must be authoritative:** it should validate movement, hits, damage and
-the match state, and clients should only send inputs. The design is in
-[docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
+(health, aim, speed). With bots only, this harms no one else.
+
+Lobbies (added 2026-10-25) follow [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md): the host's
+game is the authority. Joining players send only inputs; the host simulates their movement
+with the same code, and decides every shot, hit, damage, kill, box roll and pickup.
+
+- **Inputs are validated:** fixed-size binary messages, every number range-checked and
+  finite, unknown messages dropped, at most 400 input and 20 event messages per second per
+  player, message size caps on both channels.
+- **No speed hacks:** each input carries its frame time, and the host only runs as much
+  input time as real time has passed (with a small burst allowance).
+- **No fire-rate or ammo hacks:** fire rate, ammo, spread and reload run on the host's copy
+  of each player's gun (a 30 ms timing tolerance).
+- **Lag compensation is capped:** shots are checked against where targets were at most
+  250 ms ago.
+- **The host can cheat.** It is a player's own game, so lobbies are for friends; lobby
+  matches are not saved to stats. Ranked play would need the same host code on a server.
+- **Network addresses:** players connect directly (WebRTC), so the host and each joining
+  player see each other's IP address. This is stated in the README's privacy section. No
+  TURN relay is used, so a few strict networks can't connect.
+- **Signaling data in Firestore** (`lobbies/{code}`): codes can be looked up but not listed;
+  only the host can create, and delete, its lobby; a joining player's offer can be read only
+  by them and the host, and is deleted once connected. Names must be the signed-in
+  player's own. See `firestore.rules`.
+- **Names and text from other players** are length-limited, checked against the username
+  pattern, and only ever shown as text.
 
 ### 9. Firebase web key committed to the repository (fixed)
 

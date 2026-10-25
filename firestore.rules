@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Agilos: profiles (username + password) and per-player match stats.
+// Agilos: profiles (username + password), per-player match stats and lobby signaling.
 // A player can only read and write their own documents. Stats come from the player's own
 // game, so they can't be fully trusted; these rules reject malformed or impossible values.
 service cloud.firestore {
@@ -56,6 +56,44 @@ service cloud.firestore {
           && amount(request.resource.data.damageTaken, 100000)
           && request.resource.data.win is bool
           && (request.resource.data.win == false || request.resource.data.place == 1);
+      }
+    }
+
+    // Lobbies: a player hosts one under a 6-letter code; friends with the code leave a
+    // WebRTC connection offer the host's game answers. After that the games talk directly.
+    // Codes can be looked up but not listed, so a lobby can only be found with its code.
+    match /lobbies/{code} {
+      function validCode() { return code.matches('^[A-HJ-NP-Z]{6}$'); }
+      allow get: if signedIn();
+      allow list, update: if false;
+      allow create: if signedIn() && validCode()
+        && request.resource.data.keys().hasOnly(['host', 'name', 'max', 'createdAt', 'expireAt'])
+        && request.resource.data.host == request.auth.uid
+        && ownName(request.resource.data.name)
+        && request.resource.data.max is int && request.resource.data.max >= 2 && request.resource.data.max <= 16
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expireAt is timestamp
+        && request.resource.data.expireAt <= request.time + duration.value(3, 'h');
+      allow delete: if signedIn() && resource.data.host == request.auth.uid;
+
+      // One per joining player: their offer, then the host's answer. Only the two of them
+      // can read it (it holds network addresses), and it is deleted once they connect.
+      match /peers/{uid} {
+        function lobbyPath() { return /databases/$(database)/documents/lobbies/$(code); }
+        function isHost() { return signedIn() && exists(lobbyPath()) && get(lobbyPath()).data.host == request.auth.uid; }
+        function sdp(v) { return v is string && v.size() < 20000; }
+        allow get: if isOwner(uid) || isHost();
+        allow list: if isHost();
+        allow create: if isOwner(uid) && exists(lobbyPath())
+          && request.resource.data.keys().hasOnly(['offer', 'name', 'colour', 'at'])
+          && sdp(request.resource.data.offer)
+          && ownName(request.resource.data.name)
+          && validColour(request.resource.data.colour)
+          && request.resource.data.at == request.time;
+        allow update: if isHost()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer'])
+          && sdp(request.resource.data.answer);
+        allow delete: if isOwner(uid) || isHost();
       }
     }
   }

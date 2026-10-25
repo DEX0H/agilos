@@ -91,7 +91,7 @@ export class Match {
   }
 
   start() {
-    const everyone = [this.player, ...this.bots.list];
+    const everyone = [...this.world.combatants];
     this.total = everyone.length;
     // Everyone gets a different random spawn. With more players than fixed spawn points,
     // extra ones come from the bots' navigation points, kept apart from each other.
@@ -208,6 +208,12 @@ export class Match {
 
   update(dt) {
     if (this.state === 'warmup') return;
+    // A network client only draws the match; the host's game runs it
+    if (!this.follower) this.updateRules(dt);
+    this.updateWalls();
+  }
+
+  updateRules(dt) {
 
     if (this.state === 'countdown') {
       this.timer -= dt;
@@ -236,7 +242,9 @@ export class Match {
       this.winner = this.world.combatants.find((c) => !c.dead) || null;
       if (this.winner === this.player) this.playerPlace = 1;
     }
+  }
 
+  updateWalls() {
     const z = this.zone;
     this.wall.visible = z.r > 0.3;
     this.wall.position.x = z.cx;

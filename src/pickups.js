@@ -68,10 +68,14 @@ export class HealthPickups {
   }
 
   // A new map: spread items over its walkable spots (street and floors)
-  setMap(navPoints, half) {
+  setMap(navPoints, half, rand = Math.random) {
     const area = (half * 2) ** 2;
     const count = Math.min(MAX, Math.round(6 * Math.sqrt(area / 3600) * 1.15));
-    const pool = [...navPoints].sort(() => Math.random() - 0.5);
+    const pool = [...navPoints];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
     this.items = [];
     for (const p of pool) {
       if (this.items.length >= count) break;
@@ -97,8 +101,8 @@ export class HealthPickups {
         it.timer -= dt;
         continue;
       }
-      // Anyone hurt who steps on it uses it
-      for (const c of this.world.combatants) {
+      // Anyone hurt who steps on it uses it (on a network client the host decides)
+      for (const c of this.follower ? [] : this.world.combatants) {
         if (c.dead || c.health >= c.maxHealth) continue;
         if (Math.abs(c.position.y - it.pos.y) > 1.4) continue;
         if (Math.hypot(c.position.x - it.pos.x, c.position.z - it.pos.z) > REACH) continue;
