@@ -59,7 +59,7 @@ so they work on QWERTY, QWERTZ and AZERTY, and the labels match your layout.
 | E | Use a mystery box |
 | Space | Jump; again in the air for a double jump, or next to a wall for a wall jump |
 | Shift | Sprint |
-| C | Crouch; while sprinting, slide |
+| Ctrl | Crouch; press while running to slide (crouch and slide are separate bindings, both on Ctrl by default). A new slide needs a fresh press and comes at most every 1.6 s. In the browser the game plays fullscreen while Ctrl is bound, so Ctrl+W can't close the tab (Fullscreen setting) |
 | R | Reload |
 | 1 / 2 | Gun (handgun or box weapon) / knife |
 | F | Flip the knife |

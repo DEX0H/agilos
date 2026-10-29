@@ -516,6 +516,7 @@ export class Bot extends Character {
     // Long straight stretch ahead on the ground: sometimes slide, like a player would
     if (len > 7 && this.onGround && this.slideHold <= 0 && Math.random() < 0.6 * dt) {
       this.slideHold = 0.7;
+      this.slidePress = true;
     }
     return [dx / len, dz / len];
   }
@@ -779,7 +780,9 @@ export class Bot extends Character {
     // Slide: hold crouch while sprinting, and often finish with a slide-jump
     if (this.slideHold > 0) {
       this.slideHold -= dt;
-      input.crouch = true;
+      input.slide = true;
+      input.slidePressed = !!this.slidePress;
+      this.slidePress = false;
       input.sprint = true;
       if (this.slideHold <= 0.08 && this.sliding && Math.random() < 0.5) input.jump = true;
     }
@@ -865,8 +868,26 @@ export class Bot extends Character {
     this.animate(dt);
   }
 
+  // On stairs the body moves along a smooth ramp; draw it standing on the real step
+  // under it, eased, so feet don't float above or sink into the steps
+  stairFootY(dt) {
+    let y = this.position.y;
+    const grid = this.colliders.grid;
+    if (this.onGround && grid && this.colliders.ramps && this.colliders.ramps.length) {
+      const p = this.position;
+      for (const b of grid.query(p.x - 0.05, p.z - 0.05, p.x + 0.05, p.z + 0.05, this.footBuf || (this.footBuf = []))) {
+        if (!b.stair || p.x < b.min.x || p.x > b.max.x || p.z < b.min.z || p.z > b.max.z) continue;
+        if (Math.abs(b.max.y - p.y) < 0.3) { y = b.max.y; break; }
+      }
+    }
+    if (this.footY === undefined || Math.abs(this.footY - y) > 1) this.footY = y;
+    this.footY += (y - this.footY) * Math.min(1, dt * 18);
+    return this.footY;
+  }
+
   animate(dt) {
     this.group.position.copy(this.position);
+    this.group.position.y = this.stairFootY(dt);
     this.group.rotation.y = this.yaw + Math.PI; // model faces +z, yaw 0 looks along -z
     this.body.scale.y = this.height / STAND_H;
     this.tag.position.y = this.height + 0.38;

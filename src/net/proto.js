@@ -25,7 +25,7 @@ export const NONE = 255;
 
 export const BTN = {
   sprint: 1, crouch: 2, jump: 4, jumpHeld: 8, crouchPressed: 16, reload: 32, use: 64,
-  knife: 128, slash: 256, aiming: 512, scoped: 1024,
+  knife: 128, slash: 256, aiming: 512, scoped: 1024, slide: 2048, slidePressed: 4096,
 };
 export const FLAG = {
   dead: 1, onGround: 2, sliding: 4, crouch: 8, frozen: 16, combat: 32, reloading: 64, knife: 128, shielded: 256,
@@ -88,6 +88,8 @@ export function decodeInputs(buf) {
       jump: !!(b & BTN.jump),
       jumpHeld: !!(b & BTN.jumpHeld),
       crouchPressed: !!(b & BTN.crouchPressed),
+      slide: !!(b & BTN.slide),
+      slidePressed: !!(b & BTN.slidePressed),
       reload: !!(b & BTN.reload),
       use: !!(b & BTN.use),
       knife: !!(b & BTN.knife),

@@ -303,6 +303,8 @@ export class NetClient {
     if (inp.jump) buttons |= BTN.jump;
     if (inp.jumpHeld) buttons |= BTN.jumpHeld;
     if (inp.crouchPressed) buttons |= BTN.crouchPressed;
+    if (inp.slide) buttons |= BTN.slide;
+    if (inp.slidePressed) buttons |= BTN.slidePressed;
     if (pend.reload) buttons |= BTN.reload;
     if (pend.use) buttons |= BTN.use;
     if (knife) buttons |= BTN.knife;

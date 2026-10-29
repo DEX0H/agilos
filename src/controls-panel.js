@@ -1,6 +1,6 @@
 import {
   ACTIONS, settings, bindLabel, bind, capture, resetDefaults, setLayout, setSens, setBots, MIN_BOTS, MAX_BOTS,
-  setDifficulty, DIFFICULTIES, setVolume,
+  setDifficulty, DIFFICULTIES, setVolume, setFullscreen,
   detectedLayout, onSettingsChange,
 } from './settings.js';
 
@@ -108,6 +108,18 @@ export function buildControlsPanel(container, hints) {
   };
   const vols = [volRow('Effects', 'sfxVol'), volRow('Music', 'musicVol')];
   general.append(layoutRow, sensRow, botsRow, diffRow, ...vols.map((v) => v.row));
+  // Browser only: fullscreen keeps Ctrl+W from closing the tab (the Windows app doesn't need it)
+  const fsRow = el('label', 'field');
+  fsRow.append(el('span', 'field-name', 'Fullscreen'));
+  const fsSel = el('select');
+  for (const [v, t] of [['on', 'While playing (Ctrl keys safe)'], ['off', 'Off']]) {
+    const o = el('option', '', t);
+    o.value = v;
+    fsSel.append(o);
+  }
+  fsSel.addEventListener('change', () => { setFullscreen(fsSel.value === 'on'); refresh(); });
+  fsRow.append(fsSel);
+  if (!window.agilosDesktop) general.append(fsRow);
   container.append(general);
 
   // Key bindings
@@ -159,6 +171,7 @@ export function buildControlsPanel(container, hints) {
     sel.value = settings.layout;
     botsSlider.value = String(settings.bots);
     diffSel.value = settings.difficulty;
+    fsSel.value = settings.fullscreen ? 'on' : 'off';
     for (const v of vols) {
       v.sl.value = String(Math.round(settings[v.key] * 100));
       v.num.value = String(Math.round(settings[v.key] * 100));
@@ -179,7 +192,8 @@ export function buildControlsPanel(container, hints) {
         chip([b('forward'), b('left'), b('back'), b('right')], 'move'),
         chip([b('jump')], 'jump · double · wall · hold at a wall: climb'),
         chip([b('sprint')], 'sprint'),
-        chip([b('crouch')], 'slide / crouch · jump+crouch on a mantle: superglide'),
+        chip(settings.binds.slide === settings.binds.crouch ? [b('crouch')] : [b('crouch'), b('slide')],
+          settings.binds.slide === settings.binds.crouch ? 'crouch · while running: slide · jump+crouch on a mantle: superglide' : 'crouch · slide · jump+crouch on a mantle: superglide'),
         chip(['Mouse'], 'shoot'),
         chip(['RMB'], 'hold: aim down sights'),
         chip([b('interact')], 'mystery box'),
