@@ -23,7 +23,7 @@ import { World } from './world.js';
 import { NavGraph } from './nav.js';
 import { Bots } from './bots.js';
 import { Match } from './match.js';
-import { settings, bindLabel, setSens, capture, onBotsChange } from './settings.js';
+import { settings, bindLabel, setSens, capture, onBotsChange, usesCtrl } from './settings.js';
 import { buildControlsPanel } from './controls-panel.js';
 import { createSky } from './sky.js';
 import { createPostFx } from './postfx.js';
@@ -117,6 +117,7 @@ function buildMap(lots, seed = newSeed()) {
   colliders.length = 0;
   colliders.push(...arena.colliders);
   colliders.grid = new ColliderGrid(colliders);
+  colliders.ramps = arena.ramps;
   nav = new NavGraph(colliders, arena.navPoints, arena.navLinks, arena.navJumps);
   // City facades and details load in the background; the plain boxes show until then.
   // Then the arena's static meshes are merged into a few draw calls per map chunk.
@@ -634,6 +635,13 @@ function canRestart() {
 
 // Closing the page closes your lobby too (its document is deleted; best effort)
 window.addEventListener('pagehide', () => { if (net.active) net.leave(); });
+// Browsers that can't lock the keyboard (or fullscreen turned off): Ctrl+W mid-match asks first
+window.addEventListener('beforeunload', (e) => {
+  if (window.agilosDesktop || !usesCtrl() || !player.locked || match.state !== 'live' || player.dead) return;
+  if (document.fullscreenElement && navigator.keyboard && navigator.keyboard.lock) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 // Reloads are sent to the host with the next input
 on('reload', (owner) => { if (net.client && owner === player) net.client.pending.reload = true; });

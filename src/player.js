@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Character, NO_INPUT } from './character.js';
-import { settings, radPerCount, capture } from './settings.js';
+import { settings, radPerCount, capture, usesCtrl } from './settings.js';
 
 // The local player: a Character driven by keyboard and mouse, with the camera on its eyes.
 // Keys come from the bindings in settings (physical key positions, any keyboard layout).
@@ -29,6 +29,13 @@ export class Player extends Character {
     document.addEventListener('click', () => {
       if (this.locked) return;
       const failed = () => document.dispatchEvent(new Event('agilos:lockfailed'));
+      // In a browser, Ctrl+W closes the tab and a page can only stop that while fullscreen
+      // with the keyboard locked. So with a Ctrl binding, play fullscreen (a setting).
+      if (!window.agilosDesktop && settings.fullscreen && usesCtrl() && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+          .then(() => (navigator.keyboard && navigator.keyboard.lock ? navigator.keyboard.lock() : null))
+          .catch(() => {});
+      }
       // Raw mouse input (no OS acceleration) where the browser supports it, plain lock otherwise
       let req;
       try {
@@ -64,11 +71,18 @@ export class Player extends Character {
 
     document.addEventListener('keydown', (e) => {
       if (capture.action) return; // a key is being rebound
+      if (this.locked) {
+        // With the keyboard locked the browser leaves Esc to us: back to the menu
+        if (e.code === 'Escape') { document.exitPointerLock(); return; }
+        // Crouching on Ctrl: keep Ctrl+S, Ctrl+D... from reaching the browser
+        if (e.ctrlKey || e.metaKey) e.preventDefault();
+      }
       if (e.code === settings.binds.jump) {
         e.preventDefault();
         if (!e.repeat) this.jumpQueued = true;
       }
       if (e.code === settings.binds.crouch && !e.repeat) this.crouchQueued = true;
+      if (e.code === settings.binds.slide && !e.repeat) { this.slideQueued = true; this.crouchQueued = true; }
       if (e.code === 'Space') e.preventDefault(); // never scroll the page
       this.keys.add(e.code);
     });
@@ -120,9 +134,12 @@ export class Player extends Character {
       jump: this.jumpQueued,
       jumpHeld: k.has(b.jump),
       crouchPressed: this.crouchQueued,
+      slide: k.has(b.slide),
+      slidePressed: !!this.slideQueued,
     };
     this.jumpQueued = false;
     this.crouchQueued = false;
+    this.slideQueued = false;
     this.lastInput = input;
     this.simulate(dt, this.frozen ? NO_INPUT : input);
     this.updateCamera(dt);
@@ -130,9 +147,9 @@ export class Player extends Character {
 
   updateCamera(dt = 0) {
     const p = this.position;
-    // Ease up stair steps instead of popping 0.5 m in one frame
+    // Ease over steps and small drops instead of popping in one frame
     this.stepOffset *= Math.exp(-16 * dt);
-    if (this.stepOffset > -0.002) this.stepOffset = 0;
+    if (Math.abs(this.stepOffset) < 0.002) this.stepOffset = 0;
     // A slight roll into strafes (under a degree) so turning while moving feels fluid
     const lat = this.velocity.x * Math.cos(this.yaw) - this.velocity.z * Math.sin(this.yaw);
     const want = this.dead ? 0 : THREE.MathUtils.clamp(-lat / 10, -1, 1) * 0.012;

@@ -36,6 +36,7 @@ const MANTLE_TIME = 0.32;
 const SUPERGLIDE_SPEED = 16;
 const SUPERGLIDE_WINDOW = 0.12; // jump and crouch together near the top of a mantle
 const STEP_HEIGHT = 0.55;       // auto step-up height
+const SNAP_DOWN = 0.6;          // walking off a drop this small keeps you on the ground (stairs, curbs)
 const PHYSICS_STEP = 1 / 120;
 const MAX_HEALTH = 200;
 export const SPAWN_SHIELD = 10;  // seconds of invulnerability after spawning
@@ -45,14 +46,15 @@ const REGEN_RATE = 8;            // health per second
 // Slide (sprint + crouch on the ground)
 const SLIDE_MIN_SPEED = 6.5;
 const SLIDE_START_SPEED = 11.5; // a sprinting slide starts with a boost (once every 2 s)
-const SLIDE_BOOST_COOLDOWN = 2;
+const SLIDE_BOOST_COOLDOWN = 2.5;
 const SLIDE_GLIDE_TIME = 0.9;   // about a second of nearly free gliding before friction bites
 const SLIDE_FRICTION_EARLY = 0.35;
 const SLIDE_FRICTION = 2.2;
 const SLIDE_END_SPEED = 2.5;
 const SLIDE_MAX_TIME = 2.2;
-const SLIDE_COOLDOWN = 0.35;        // after a slide ends
-const SLIDE_REARM = 1.3;            // minimum time from one slide's start to the next: no spamming
+const SLIDE_COOLDOWN = 0.6;         // after a slide ends
+const SLIDE_REARM = 1.6;            // minimum time from one slide's start to the next: no spamming
+const SLIDE_PRESS_WINDOW = 0.25;    // a slide press counts this long on the ground (or until landing, if held)
 const SLIDE_JUMP_BOOST = 1.12;
 
 // Wall jump and wall slide
@@ -67,7 +69,13 @@ const WALL_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // Empty input, for frames where nothing is pressed
 // jumpHeld and crouchPressed are optional (the player sends them; bots don't climb)
-export const NO_INPUT = Object.freeze({ forward: 0, strafe: 0, sprint: false, crouch: false, jump: false, jumpHeld: false, crouchPressed: false });
+export const NO_INPUT = Object.freeze({ forward: 0, strafe: 0, sprint: false, crouch: false, jump: false, jumpHeld: false, crouchPressed: false, slide: false, slidePressed: false });
+
+// Stairs are walked as ramps: a sloped slab (see arena.js). Its surface height under (x, z):
+export function rampHeight(r, x, z) {
+  const t = ((r.axis === 'x' ? x : z) - r.start) * r.dir;
+  return Math.min(r.yTop, Math.max(r.y0, r.y0 + t * r.slope));
+}
 
 export class Character {
   constructor(colliders, spawn, name = 'player') {
@@ -250,7 +258,30 @@ export class Character {
   gatherNear(dt) {
     const p = this.position;
     const r = HALF_W + WALL_PROBE + 1.5 + Math.hypot(this.velocity.x, this.velocity.z) * dt;
-    this.near = nearbyBoxes(this.colliders, p.x - r, p.z - r, p.x + r, p.z + r, this.nearBuf || (this.nearBuf = []));
+    const raw = nearbyBoxes(this.colliders, p.x - r, p.z - r, p.x + r, p.z + r, this.nearBuf || (this.nearBuf = []));
+    const near = this.nearSolid || (this.nearSolid = []);
+    near.length = 0;
+    for (const b of raw) if (!b.stair) near.push(b);
+    this.near = near;
+    const ramps = this.nearRamps || (this.nearRamps = []);
+    ramps.length = 0;
+    for (const q of this.colliders.ramps || []) {
+      if (q.max.x > p.x - r && q.min.x < p.x + r && q.max.z > p.z - r && q.min.z < p.z + r) ramps.push(q);
+    }
+  }
+
+  // Standing over ramp `r` (any part of the body's footprint)
+  overRamp(r) {
+    const p = this.position;
+    return p.x + HALF_W > r.min.x && p.x - HALF_W < r.max.x && p.z + HALF_W > r.min.z && p.z - HALF_W < r.max.z;
+  }
+
+  // The ramp height under us, clamped to the ramp's own length
+  rampAt(r) {
+    const p = this.position;
+    const x = Math.min(r.max.x, Math.max(r.min.x, p.x));
+    const z = Math.min(r.max.z, Math.max(r.min.z, p.z));
+    return rampHeight(r, x, z);
   }
 
   simulate(dt, input) {
@@ -265,6 +296,11 @@ export class Character {
     this.landShock = Math.max(0, this.landShock - dt);
     if (input.jump) this.lastJumpAt = this.simTime;
     if (input.crouchPressed) this.lastCrouchAt = this.simTime;
+    // A slide needs a fresh press. Pressed in the air and held, it slides on landing.
+    if (input.slidePressed) this.slideArm = SLIDE_PRESS_WINDOW;
+    if (!input.slide && !input.slidePressed) this.slideArm = 0;
+    if (this.onGround) this.slideArm = Math.max(0, (this.slideArm || 0) - dt);
+    const low = input.crouch || input.slide; // either key keeps you low
 
     // Facing on the ground plane, and the wish direction relative to it
     const fx = -Math.sin(this.yaw);
@@ -285,14 +321,16 @@ export class Character {
     // knife (weapon away) is a little faster; a hard landing slows you for a moment.
     let speed = input.sprint ? SPRINT_SPEED : WALK_SPEED;
     if (this.aiming) speed = WALK_SPEED * ADS_SPEED;
-    if (input.crouch && this.onGround && !this.sliding) speed = Math.min(speed, CROUCH_SPEED);
+    if (low && this.onGround && !this.sliding) speed = Math.min(speed, CROUCH_SPEED);
     speed *= this.speedMult;
     if (this.landShock > 0) speed *= 0.45;
 
     const vel = this.velocity;
     let hs = Math.hypot(vel.x, vel.z);
     // Slide: crouch while moving fast on the ground (aiming doesn't prevent it)
-    if (input.crouch && this.onGround && !this.sliding && this.slideCooldown <= 0 && !(this.slideRearm > 0) && hs >= SLIDE_MIN_SPEED) {
+    if ((this.slideArm > 0 || (input.slidePressed && this.onGround)) && this.onGround && !this.sliding &&
+        this.slideCooldown <= 0 && !(this.slideRearm > 0) && hs >= SLIDE_MIN_SPEED) {
+      this.slideArm = 0;
       this.startSlide(hs);
       hs = Math.hypot(vel.x, vel.z);
     }
@@ -312,7 +350,7 @@ export class Character {
         vel.z += (wz * sp - vel.z) * steer;
       }
       this.slideTime += dt;
-      if (hs < SLIDE_END_SPEED || this.slideTime > SLIDE_MAX_TIME || !this.onGround || !input.crouch) this.endSlide();
+      if (hs < SLIDE_END_SPEED || this.slideTime > SLIDE_MAX_TIME || !this.onGround || !low) this.endSlide();
     } else if (this.onGround && this.landGrace <= 0) {
       if (hs > speed + 0.3) {
         // Faster than you can run (after a slide or a hop): friction bleeds the extra off
@@ -349,7 +387,7 @@ export class Character {
     }
 
     // Stance: low while sliding or crouching; stays low under a ceiling
-    if (this.sliding || input.crouch) this.height = CROUCH_H;
+    if (this.sliding || low) this.height = CROUCH_H;
     else if (this.canStand()) this.height = STAND_H;
 
     // Speed cap, so chained tricks stay sane
@@ -585,6 +623,7 @@ export class Character {
     this.moveAxis('z', this.velocity.z * dt);
     this.moveVertical(this.velocity.y * dt);
     this.updateGround();
+    if (wasGround && !this.onGround && this.velocity.y <= 0 && !this.mantle && !this.climb) this.snapDown();
     if (this.onGround && !wasGround) {
       emit('land', this, fall);
       // Landing: a short bunny-hop window, and a hard landing slows you briefly
@@ -611,6 +650,11 @@ export class Character {
     for (const box of this.near || this.colliders) {
       if (this.overlapsWith(box, STAND_H)) return false;
     }
+    for (const r of this.nearRamps || []) {
+      if (!this.overRamp(r)) continue;
+      const under = this.rampAt(r) - r.thick;
+      if (this.position.y < under && this.position.y + STAND_H > under) return false;
+    }
     return true;
   }
 
@@ -630,6 +674,23 @@ export class Character {
       else this.position[axis] = box.max[axis] + HALF_W;
       this.velocity[axis] = 0;
     }
+    const p = this.position;
+    for (const r of this.nearRamps || []) {
+      if (!this.overRamp(r)) continue;
+      const h = this.rampAt(r);
+      if (p.y >= h - 1e-3 || p.y + this.height <= h - r.thick) continue; // on top of it, or under it
+      const rise = h - p.y;
+      if (rise <= STEP_HEIGHT) {
+        // Up the slope (or onto its low end): smooth, no step-by-step popping
+        p.y = h;
+        if (rise > 0.08) this.stepOffset = Math.max(-STEP_HEIGHT, this.stepOffset - rise);
+        if (this.velocity.y < 0) this.velocity.y = 0;
+        continue;
+      }
+      p[axis] -= d; // its side or underside: blocked
+      this.velocity[axis] = 0;
+      break;
+    }
   }
 
   moveVertical(d) {
@@ -640,12 +701,64 @@ export class Character {
       else this.position.y = box.min.y - this.height;
       this.velocity.y = 0;
     }
+    const p = this.position;
+    const before = p.y - d;
+    for (const r of this.nearRamps || []) {
+      if (!this.overRamp(r)) continue;
+      const h = this.rampAt(r);
+      if (d < 0 && p.y < h && before >= h - STEP_HEIGHT) {
+        p.y = h; // landed on the stairs
+        this.velocity.y = 0;
+      } else if (d > 0) {
+        const under = h - r.thick;
+        if (p.y + this.height > under && before + this.height <= under + 1e-3) {
+          p.y = under - this.height; // head on the underside
+          this.velocity.y = 0;
+        }
+      }
+    }
+  }
+
+  // Walking off a small drop (down stairs, off a curb): stay on the ground instead of
+  // falling a few centimetres every step. The camera eases down (see Player).
+  snapDown() {
+    const p = this.position;
+    let top = -Infinity;
+    for (const box of this.near || this.colliders) {
+      if (box.max.y > p.y + 1e-3 || box.max.y < p.y - SNAP_DOWN) continue;
+      if (p.x + HALF_W > box.min.x && p.x - HALF_W < box.max.x && p.z + HALF_W > box.min.z && p.z - HALF_W < box.max.z) {
+        top = Math.max(top, box.max.y);
+      }
+    }
+    for (const r of this.nearRamps || []) {
+      if (!this.overRamp(r)) continue;
+      const h = this.rampAt(r);
+      if (h <= p.y + 1e-3 && h >= p.y - SNAP_DOWN) top = Math.max(top, h);
+    }
+    if (top === -Infinity) return;
+    const drop = p.y - top;
+    p.y = top;
+    if (drop > 0.08) this.stepOffset = Math.min(STEP_HEIGHT, this.stepOffset + drop);
+    this.velocity.y = 0;
+    this.onGround = true;
+    this.canDouble = true;
+    this.wallTimer = 0;
+    this.lastWallBox = null;
   }
 
   updateGround() {
     this.onGround = false;
     if (this.velocity.y > 0) return;
     const p = this.position;
+    for (const r of this.nearRamps || []) {
+      if (this.overRamp(r) && Math.abs(this.rampAt(r) - p.y) < 0.05) {
+        this.onGround = true;
+        this.canDouble = true;
+        this.wallTimer = 0;
+        this.lastWallBox = null;
+        return;
+      }
+    }
     for (const box of this.near || this.colliders) {
       if (Math.abs(box.max.y - p.y) > 0.05) continue;
       const overlapsXZ = p.x + HALF_W > box.min.x && p.x - HALF_W < box.max.x &&

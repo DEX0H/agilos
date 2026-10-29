@@ -115,10 +115,12 @@ export function buildArena(scene, { lots = 3, seed = 1 } = {}) {
       }
     }
 
-    colliders.push(new THREE.Box3(
+    const box = new THREE.Box3(
       new THREE.Vector3(x - w / 2, bottomY, z - d / 2),
       new THREE.Vector3(x + w / 2, top, z + d / 2),
-    ));
+    );
+    colliders.push(box);
+    mesh.userData.collider = box;
     return mesh;
   }
 
@@ -131,6 +133,8 @@ export function buildArena(scene, { lots = 3, seed = 1 } = {}) {
   const roofs = [];
   // Rooftop AC units: solid, so their colliders are added here; city.js draws them
   const rooftopProps = [];
+  // Stairs are walked as smooth ramps (see character.js); their steps still stop bullets
+  const ramps = [];
 
   // One flight of floating steps outside side `side` of footprint b, from baseY up one story.
   // N runs +x from the west corner, E runs +z from the north corner,
@@ -169,8 +173,28 @@ export function buildArena(scene, { lots = 3, seed = 1 } = {}) {
       if (side === 'E') { cx = b.x1 + STAIR_W / 2; cz = b.z0 + along; sx = STAIR_W; sz = STEP_RUN; }
       if (side === 'S') { cx = b.x1 - along; cz = b.z1 + STAIR_W / 2; sx = STEP_RUN; sz = STAIR_W; }
       if (side === 'W') { cx = b.x0 - STAIR_W / 2; cz = b.z1 - along; sx = STAIR_W; sz = STEP_RUN; }
-      block(cx, cz, sx, sz, top, { bottomY: top - 0.3, kind: 'metal', color: stairColor });
+      const step = block(cx, cz, sx, sz, top, { bottomY: top - 0.3, kind: 'metal', color: stairColor });
+      step.userData.collider.stair = true; // walked as the ramp below, not step by step
     }
+
+    // The ramp: a sloped slab through the middle of every step's top, flat on the last
+    // half step so it meets the floor above. Movement uses it instead of the steps.
+    const a0 = STAIR_INSET;
+    const a1 = STAIR_INSET + STEP_RUN * steps;
+    const [p0x, p0z] = sidePoint(b, side, a0, 0);
+    const [p1x, p1z] = sidePoint(b, side, a1, STAIR_W);
+    const axis = side === 'N' || side === 'S' ? 'x' : 'z';
+    const start = axis === 'x' ? p0x : p0z;
+    const dir = side === 'N' || side === 'E' ? 1 : -1;
+    ramps.push({
+      min: new THREE.Vector3(Math.min(p0x, p1x), baseY - 0.5, Math.min(p0z, p1z)),
+      max: new THREE.Vector3(Math.max(p0x, p1x), baseY + STORY, Math.max(p0z, p1z)),
+      axis, dir, start,
+      y0: baseY + STEP_RISE / 2,       // height where the ramp starts (half a step up)
+      slope: STEP_RISE / STEP_RUN,
+      yTop: baseY + STORY,
+      thick: 0.5,                      // solid this far under the surface (headroom below)
+    });
   }
 
   // Full-height wall on the half of a side away from where that side's stairs start
@@ -481,6 +505,6 @@ export function buildArena(scene, { lots = 3, seed = 1 } = {}) {
 
   return {
     colliders, group, playerSpawn, mobSpawns, navPoints, navLinks, navJumps,
-    facades, perimeterFaces, chimneys, slabs, roofs, rooftopProps, half, lots,
+    facades, perimeterFaces, chimneys, slabs, roofs, rooftopProps, half, lots, ramps,
   };
 }

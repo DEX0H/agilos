@@ -18,7 +18,8 @@ export const ACTIONS = [
   ['right', 'Move right', 'KeyD'],
   ['jump', 'Jump / double / wall jump', 'Space'],
   ['sprint', 'Sprint', 'ShiftLeft'],
-  ['crouch', 'Crouch / slide', 'KeyC'],
+  ['crouch', 'Crouch', 'ControlLeft'],
+  ['slide', 'Slide (while running)', 'ControlLeft'],
   ['reload', 'Reload', 'KeyR'],
   ['interact', 'Use mystery box', 'KeyE'],
   ['weapon1', 'Gun', 'Digit1'],
@@ -29,6 +30,8 @@ export const ACTIONS = [
   ['sensUp', 'Sensitivity up', 'BracketRight'],
 ];
 const RESERVED = new Set(['Escape', 'Enter']); // Esc releases the mouse, Enter restarts
+// Actions that may share one key (crouch and slide both on Ctrl by default)
+const SHARED = new Set(['crouch', 'slide']);
 
 const defaults = () => Object.fromEntries(ACTIONS.map(([a, , code]) => [a, code]));
 
@@ -36,7 +39,7 @@ export const MIN_BOTS = 1;
 export const MAX_BOTS = 15;
 export const DEFAULT_BOTS = 4;
 export const DIFFICULTIES = ['easy', 'normal', 'hard'];
-export const settings = { binds: defaults(), sens: DEFAULT_SENS, layout: 'auto', bots: DEFAULT_BOTS, difficulty: 'normal', sfxVol: 0.8, musicVol: 0.5 };
+export const settings = { binds: defaults(), sens: DEFAULT_SENS, layout: 'auto', bots: DEFAULT_BOTS, difficulty: 'normal', sfxVol: 0.8, musicVol: 0.5, fullscreen: true };
 
 // Saved settings are untrusted input (anyone can edit their own localStorage), so only
 // known actions with plausible key codes, a known layout and a finite sensitivity are accepted.
@@ -51,6 +54,16 @@ function applySaved(saved) {
           settings.binds[action] = code;
         }
       }
+      // Saved before slide had its own key: the old default crouch key (C) moves to Ctrl
+      if (!Object.prototype.hasOwnProperty.call(saved.binds, 'slide') && saved.binds.crouch === 'KeyC') {
+        settings.binds.crouch = 'ControlLeft';
+      }
+      // Never leave two actions on one key (except crouch and slide)
+      for (const [a] of ACTIONS) {
+        for (const [o] of ACTIONS) {
+          if (a !== o && settings.binds[a] === settings.binds[o] && !(SHARED.has(a) && SHARED.has(o))) settings.binds[o] = defaults()[o];
+        }
+      }
     }
     if (typeof saved.sens === 'number' && Number.isFinite(saved.sens)) {
       settings.sens = Math.min(10, Math.max(0.1, saved.sens));
@@ -58,6 +71,7 @@ function applySaved(saved) {
     if (typeof saved.layout === 'string' && LAYOUTS.has(saved.layout)) settings.layout = saved.layout;
     if (Number.isInteger(saved.bots)) settings.bots = Math.min(MAX_BOTS, Math.max(MIN_BOTS, saved.bots));
     if (DIFFICULTIES.includes(saved.difficulty)) settings.difficulty = saved.difficulty;
+    if (typeof saved.fullscreen === 'boolean') settings.fullscreen = saved.fullscreen;
     for (const k of ['sfxVol', 'musicVol']) {
       if (typeof saved[k] === 'number' && Number.isFinite(saved[k])) settings[k] = Math.min(1, Math.max(0, saved[k]));
     }
@@ -78,7 +92,7 @@ export function applyRemoteSettings(remote) {
 
 // A plain copy for syncing to the profile
 export function settingsSnapshot() {
-  return { binds: { ...settings.binds }, sens: settings.sens, layout: settings.layout, bots: settings.bots, difficulty: settings.difficulty, sfxVol: settings.sfxVol, musicVol: settings.musicVol };
+  return { binds: { ...settings.binds }, sens: settings.sens, layout: settings.layout, bots: settings.bots, difficulty: settings.difficulty, sfxVol: settings.sfxVol, musicVol: settings.musicVol, fullscreen: settings.fullscreen };
 }
 
 export function save() {
@@ -116,6 +130,17 @@ export function setDifficulty(d) {
 const botListeners = [];
 export function onBotsChange(fn) {
   botListeners.push(fn);
+}
+
+// Browser only: play fullscreen with the keyboard locked, so Ctrl+W (crouch + forward)
+// can't close the tab
+export function setFullscreen(on) {
+  settings.fullscreen = !!on;
+  changed();
+}
+// Is any action on a Ctrl key? (then fullscreen matters in a browser)
+export function usesCtrl() {
+  return Object.values(settings.binds).some((c) => c === 'ControlLeft' || c === 'ControlRight');
 }
 
 export function setSens(v) {
@@ -229,7 +254,7 @@ export function bind(action, code) {
   // If another action already uses this key, give it this action's old key (swap)
   const old = settings.binds[action];
   for (const [a] of ACTIONS) {
-    if (a !== action && settings.binds[a] === code) settings.binds[a] = old;
+    if (a !== action && settings.binds[a] === code && !(SHARED.has(a) && SHARED.has(action))) settings.binds[a] = old;
   }
   settings.binds[action] = code;
   changed();
