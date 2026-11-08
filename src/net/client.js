@@ -46,10 +46,12 @@ export class NetClient {
     // Testing only: ?debug&lag=50 delays everything 50 ms each way (100 ms ping)
     const q = new URLSearchParams(location.search);
     this.lag = import.meta.env.DEV && q.has('debug') ? Math.max(0, Math.min(500, Number(q.get('lag')) || 0)) : 0;
+    // ...and &jitter=40 adds up to 40 ms more at random to each message (uneven networks)
+    this.jitter = import.meta.env.DEV && q.has('debug') ? Math.max(0, Math.min(500, Number(q.get('jitter')) || 0)) : 0;
   }
 
   later(fn) {
-    if (this.lag) setTimeout(fn, this.lag);
+    if (this.lag || this.jitter) setTimeout(fn, this.lag + Math.random() * this.jitter);
     else fn();
   }
 
@@ -275,16 +277,20 @@ export class NetClient {
         if (sn[i - 1].time <= rt) { a = sn[i - 1]; b = sn[i]; break; }
       }
       const k = b.time > a.time ? Math.max(0, Math.min(1, (rt - a.time) / (b.time - a.time))) : 1;
+      // A late snapshot: keep others moving along their last velocity for a moment instead
+      // of freezing them and jumping when it arrives
+      const ahead = rt > b.time ? Math.min(0.1, rt - b.time) : 0;
       const prev = new Map(a.players.map((x) => [x.id, x]));
       for (const s1 of b.players) {
         const c = this.ents.get(s1.id);
         if (!c || c === p) continue;
         const s0 = prev.get(s1.id) || s1;
+        const ex = s1.dead || s1.frozen ? 0 : ahead;
         c.apply({
           ...s1,
-          x: s0.x + (s1.x - s0.x) * k,
-          y: s0.y + (s1.y - s0.y) * k,
-          z: s0.z + (s1.z - s0.z) * k,
+          x: s0.x + (s1.x - s0.x) * k + s1.vx * ex,
+          y: s0.y + (s1.y - s0.y) * k + (s1.onGround ? 0 : s1.vy * ex),
+          z: s0.z + (s1.z - s0.z) * k + s1.vz * ex,
           yaw: lerpAngle(s0.yaw, s1.yaw, k),
           pitch: s0.pitch + (s1.pitch - s0.pitch) * k,
         }, dt);
