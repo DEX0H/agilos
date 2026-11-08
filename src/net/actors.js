@@ -19,7 +19,9 @@ const _origin = new THREE.Vector3();
 const _aim = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
 const MAX_QUEUE = 90;
-const TIME_BUDGET = 0.25;        // seconds of input a player may run ahead (lag bursts)
+const MAX_OWED = 0.5;            // real time a player may still catch up on after a hiccup
+const PLAYOUT = 0.05;            // input held back so uneven packet arrival plays out evenly
+const CATCH_UP = 1.25;           // after a hiccup, catch up at most this much faster than real time
 
 function aimVector(yaw, pitch, out) {
   const cp = Math.cos(pitch);
@@ -33,6 +35,7 @@ export class RemotePlayer extends Bot {
     this.queue = [];
     this.lastSeq = -1;
     this.budget = 0;
+    this.starved = true;
     this.knifeOut = false;
     this.knifeCooldown = 0;
     this.disconnected = false;
@@ -66,9 +69,9 @@ export class RemotePlayer extends Bot {
     this.damageMult = 1;
     this.preUpdate(dt);
     this.sinceFire += dt;
-    // Inputs carry their own frame time; the budget stops a modified game from running
-    // its clock faster than real time (speed hacks)
-    this.budget = Math.min(TIME_BUDGET, this.budget + dt);
+    // Inputs carry their own frame time. `owed` is the real time that has passed which this
+    // player hasn't used yet: they can never run more input time than that (speed hacks).
+    this.budget = Math.min(MAX_OWED, this.budget + dt);
     if (this.tickDead(dt)) {
       this.queue.length = 0;
       this.deathTime += dt;
@@ -86,10 +89,24 @@ export class RemotePlayer extends Bot {
     this.group.visible = true;
     this.tag.visible = true;
     this.bar.visible = true;
-    while (this.queue.length && this.queue[0].dt <= this.budget + 0.002) {
-      const inp = this.queue.shift();
-      this.budget -= inp.dt;
-      this.step(inp);
+    // Packets arrive unevenly (several at once, then none). Play inputs out at the pace of
+    // real time from a small buffer, so others see smooth movement instead of stop-and-jump.
+    let queued = 0;
+    for (const q of this.queue) queued += q.dt;
+    if (this.starved && queued >= PLAYOUT) this.starved = false;
+    if (!this.starved) {
+      // Time to spend this frame, carried over between frames (a player at 30 fps sends
+      // 33 ms inputs; a host at 144 fps has 7 ms frames)
+      this.pace = Math.min(0.1, (this.pace || 0) + dt * (queued > PLAYOUT * 3 ? CATCH_UP : 1));
+      while (this.queue.length) {
+        const d = this.queue[0].dt;
+        if (d > this.pace + 0.002 || d > this.budget + 0.002) break;
+        const inp = this.queue.shift();
+        this.pace -= d;
+        this.budget -= d;
+        this.step(inp);
+      }
+      if (!this.queue.length) { this.starved = true; this.pace = 0; } // ran dry: refill the buffer first
     }
     this.animate(dt);
   }
